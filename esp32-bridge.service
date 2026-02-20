@@ -1,0 +1,21 @@
+[Unit]
+Description=Sensor Ecology — ESP32 MQTT Bridge
+After=network-online.target mosquitto.service postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sean
+WorkingDirectory=/home/sean/sensor_ecology
+ExecStart=/usr/bin/python3 esp32_bridge.py
+Restart=on-failure
+RestartSec=10
+
+# Give the embedding model time to load before systemd declares it failed
+TimeoutStartSec=120
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

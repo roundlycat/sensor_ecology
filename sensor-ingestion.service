@@ -1,0 +1,22 @@
+[Unit]
+Description=Sensor Ecology — Sensor Ingestion Layer
+After=network-online.target mosquitto.service postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sean
+WorkingDirectory=/home/sean/sensor_ecology
+EnvironmentFile=/home/sean/sensor_ecology/.env
+ExecStart=/usr/bin/python3 sensor_ingestion_layer.py
+Restart=on-failure
+RestartSec=10
+
+# Allow time for embedding model to load
+TimeoutStartSec=120
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}Sensor Ecology{% endblock %} — Dashboard</title>
+  <link rel="stylesheet" href="/static/css/style.css" />
+</head>
+<body>
+
+<nav>
+  <a href="/" class="brand">⬡ ecology</a>
+  <a href="/"            id="nav-index">overview</a>
+  <a href="/agents"      id="nav-agents">agents</a>
+  <a href="/observations" id="nav-observations">observations</a>
+  <a href="/semantic"    id="nav-semantic">semantic</a>
+  <a href="/stream"      id="nav-live">live</a>
+</nav>
+
+<main class="container">
+  {% block content %}{% endblock %}
+</main>
+
+<script src="/static/js/app.js"></script>
+{% block scripts %}{% endblock %}
+
+<script>
+  // Highlight active nav link based on current path
+  const _navMap = {
+    '/':             'nav-index',
+    '/agents':       'nav-agents',
+    '/observations': 'nav-observations',
+    '/semantic':     'nav-semantic',
+    '/stream':       'nav-live',
+  };
+  const _activeId = _navMap[window.location.pathname];
+  if (_activeId) document.getElementById(_activeId)?.classList.add('active');
+</script>
+
+</body>
+</html>

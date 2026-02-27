@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Overview{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Overview</h1>
+
+<div class="cards">
+  <div class="card">
+    <div class="label">Total Observations</div>
+    <div class="value" id="stat-total-obs">…</div>
+  </div>
+  <div class="card">
+    <div class="label">Active Agents (1h)</div>
+    <div class="value" id="stat-active">…</div>
+  </div>
+  <div class="card">
+    <div class="label">Total Agents</div>
+    <div class="value" id="stat-total-agents">…</div>
+  </div>
+</div>
+
+<div class="section-header">Observation Types</div>
+<div class="type-grid" id="obs-types">
+  <span class="muted small">Loading…</span>
+</div>
+
+<div class="section-header">Recent Observations</div>
+<div id="recent-obs">
+  <div class="loading">Loading…</div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadStats() {
+  const data = await apiFetch('/api/stats/');
+
+  document.getElementById('stat-total-obs').textContent =
+    data.total_observations.toLocaleString();
+  document.getElementById('stat-active').textContent =
+    data.active_agents_1h;
+  document.getElementById('stat-total-agents').textContent =
+    data.total_agents;
+
+  // Observation type distribution
+  const typeGrid = document.getElementById('obs-types');
+  if (data.observation_types.length) {
+    typeGrid.innerHTML = data.observation_types
+      .map(t => `${UI.typeBadge(t.observation_type)}
+                 <span class="small muted">${t.count}</span>`)
+      .join('&ensp;');
+  } else {
+    typeGrid.innerHTML = '<span class="muted small">No observations yet.</span>';
+  }
+
+  // Recent observation list
+  const recentEl = document.getElementById('recent-obs');
+  if (!data.recent_observations.length) {
+    UI.empty(recentEl, 'No observations yet.');
+    return;
+  }
+  recentEl.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Time</th><th>Agent</th><th>Summary</th></tr>
+        </thead>
+        <tbody>
+          ${data.recent_observations.map(o => `
+            <tr>
+              <td class="muted small" style="white-space:nowrap">
+                ${UI.formatTime(o.observed_at)}
+              </td>
+              <td><span class="badge">${o.agent_name}</span></td>
+              <td>${o.semantic_summary}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+loadStats().catch(e => {
+  document.getElementById('recent-obs').innerHTML =
+    `<div class="empty-state">⚠ Could not load stats: ${e.message}</div>`;
+});
+</script>
+{% endblock %}

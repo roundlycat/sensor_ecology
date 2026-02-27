@@ -1,6 +1,14 @@
 """
 ESP32 Bridge — Pi-side receiver for hardware sensor agents.
 
+.. deprecated::
+    This bridge is retained for legacy ESP32 hardware only.
+    It uses ``all-MiniLM-L6-v2`` (384-dim embeddings), which is incompatible
+    with the project's 768-dim motif space (``nomic-embed-text`` via Ollama).
+    Observations written here cannot be compared against motif centroids or
+    perceptual events.  New hardware nodes should use ``sensor_ingestion_layer``
+    + ``perceptual_embedding_pipeline``, which both operate in 768-dim.
+
 Listens for MQTT messages from ESP32 nodes (or any external agent that can't
 reach Postgres directly), generates embeddings, and stores observations to the
 sensor ecology database.
@@ -15,10 +23,12 @@ Run:
 
 import json
 import logging
+import os
 import signal
 import sys
 import threading
 import uuid
+import warnings
 from datetime import datetime, timezone
 
 import psycopg2
@@ -32,9 +42,10 @@ logging.basicConfig(
     format="%(asctime)s [bridge] %(levelname)s %(message)s",
 )
 
-BROKER_HOST = "localhost"
-BROKER_PORT  = 1883
-DB_DSN = "dbname=sensor_ecology user=sean password=ecology host=localhost"
+BROKER_HOST = os.getenv("MQTT_BROKER_HOST", "localhost")
+BROKER_PORT  = int(os.getenv("MQTT_BROKER_PORT", "1883"))
+# Set SENSOR_DB_DSN in the environment (or a .env file) — never hardcode credentials.
+DB_DSN = os.getenv("SENSOR_DB_DSN", "dbname=sensor_ecology user=sean host=/var/run/postgresql")
 
 # Deterministic UUID namespace for ESP32 agents (fixed, never change)
 _ESP32_NS = uuid.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
@@ -51,6 +62,13 @@ def _vec_literal(embedding: list) -> str:
 
 class ESP32Bridge:
     def __init__(self):
+        warnings.warn(
+            "ESP32Bridge is deprecated: it produces 384-dim embeddings (all-MiniLM-L6-v2) "
+            "that are incompatible with the 768-dim motif space. "
+            "Migrate to sensor_ingestion_layer + perceptual_embedding_pipeline.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self._db = self._open_db()
         log.info("Loading embedding model (all-MiniLM-L6-v2, 384-dim) …")
         self._embedder = SentenceTransformer("all-MiniLM-L6-v2")

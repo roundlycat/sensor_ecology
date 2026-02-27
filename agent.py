@@ -14,6 +14,7 @@ Lifecycle:
 
 import json
 import logging
+import os
 import signal
 import threading
 import time
@@ -47,7 +48,7 @@ def _get_embedder():
 
 log = logging.getLogger(__name__)
 
-DB_DSN = "dbname=sensor_ecology user=sean password=ecology host=localhost"
+DB_DSN = os.getenv("SENSOR_DB_DSN", "dbname=sensor_ecology user=sean host=localhost")
 
 
 # ── Database helpers ──────────────────────────────────────────────────────────
@@ -79,8 +80,8 @@ def _register_agent(conn, agent_id: str, agent_type: str, name: str,
 
 
 def _store_observation(conn, obs: ObservationMessage,
-                       embedding: Optional[list] = None) -> str:
-    obs_id = str(uuid.uuid4())
+                       embedding: Optional[list] = None) -> uuid.UUID:
+    obs_id = uuid.uuid4()
     with conn.cursor() as cur:
         cur.execute("""
             INSERT INTO observations
@@ -88,7 +89,7 @@ def _store_observation(conn, obs: ObservationMessage,
                  confidence, semantic_summary, embedding, raw_data)
             VALUES (%s, %s, %s, %s, %s, %s, %s::vector, %s)
         """, (
-            uuid.UUID(obs_id),
+            obs_id,
             uuid.UUID(obs.agent_id),
             obs.ts,
             obs.observation_type,

@@ -7,6 +7,7 @@ Wants=network-online.target
 Type=simple
 User=sean
 WorkingDirectory=/home/sean/sensor_ecology
+EnvironmentFile=/home/sean/sensor_ecology/.env
 ExecStart=/usr/bin/python3 esp32_bridge.py
 Restart=on-failure
 RestartSec=10

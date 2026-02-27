@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS observations (
     observation_type VARCHAR(100) NOT NULL, -- 'thermal_anomaly', 'occupancy_detected', 'object_identified'
     confidence      FLOAT CHECK (confidence BETWEEN 0 AND 1),
     semantic_summary TEXT NOT NULL,         -- agent's natural language interpretation
-    embedding       VECTOR(768),            -- semantic embedding for similarity search
+    embedding       VECTOR(384),            -- semantic embedding for similarity search
     raw_data        JSONB                   -- optional: agent stores raw data if it chooses
 );
 
@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS emergent_patterns (
     pattern_description     TEXT NOT NULL,
     supporting_observations UUID[],
     confidence_evolution    JSONB DEFAULT '[]', -- [{ts, confidence}, ...] history
-    embedding               VECTOR(768)
+    embedding               VECTOR(384)
 );
 
 CREATE INDEX IF NOT EXISTS idx_pattern_embedding ON emergent_patterns
@@ -77,7 +77,7 @@ CREATE INDEX IF NOT EXISTS idx_pattern_embedding ON emergent_patterns
 -- Usage: SELECT * FROM similar_observations('<embedding>', 0.8, 10);
 
 CREATE OR REPLACE FUNCTION similar_observations(
-    query_embedding VECTOR(768),
+    query_embedding VECTOR(384),
     similarity_threshold FLOAT DEFAULT 0.75,
     result_limit INT DEFAULT 20
 )
@@ -105,6 +105,24 @@ LANGUAGE sql STABLE AS $$
     ORDER BY embedding <=> query_embedding
     LIMIT result_limit;
 $$;
+
+-- ── Motifs ────────────────────────────────────────────────────────────────────
+-- Linguistic motifs extracted from the 18-month conversation corpus.
+-- The centroid_embedding is updated by MotifDriftUpdater as new perceptual
+-- events accrete. Each row is a named semantic attractor in embedding space.
+
+CREATE TABLE IF NOT EXISTS motifs (
+    id                  UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    label               TEXT,                       -- short human-readable phrase
+    centroid_embedding  VECTOR(768),                -- nomic-embed-text centroid
+    source_corpus       TEXT,                       -- e.g. 'conversation_archive_2024'
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_motifs_embedding ON motifs
+    USING hnsw (centroid_embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
 
 -- Grant all privileges to sean
 GRANT ALL ON ALL TABLES IN SCHEMA public TO sean;

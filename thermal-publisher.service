@@ -1,0 +1,19 @@
+[Unit]
+Description=Sensor Ecology — MLX90640 Thermal Publisher
+After=network-online.target mosquitto.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sean
+WorkingDirectory=/home/sean/sensor_ecology
+EnvironmentFile=/home/sean/sensor_ecology/.env
+ExecStart=/home/sean/sensor_ecology/.venv/bin/python thermal_publisher.py
+Restart=on-failure
+RestartSec=5
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

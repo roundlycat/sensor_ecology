@@ -1,6 +1,6 @@
 """
 Sensor Ecology Dashboard — entry point.
-Run: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+Run: uvicorn main:app --host 0.0.0.0 --port 9500
 """
 
 from contextlib import asynccontextmanager
@@ -10,9 +10,11 @@ from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from fastapi.middleware.cors import CORSMiddleware
 
 from app.db.connection import init_pool, close_pool
 from app.api import agents, observations, semantic, live, stats
+from app.api import motifs
 
 BASE_DIR = Path(__file__).parent
 
@@ -26,6 +28,13 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Sensor Ecology Dashboard", lifespan=lifespan)
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 app.mount("/static", StaticFiles(directory=BASE_DIR / "static"), name="static")
 templates = Jinja2Templates(directory=BASE_DIR / "templates")
 
@@ -34,30 +43,15 @@ app.include_router(agents.router,       prefix="/api/agents",       tags=["agent
 app.include_router(observations.router, prefix="/api/observations",  tags=["observations"])
 app.include_router(semantic.router,     prefix="/api/semantic",      tags=["semantic"])
 app.include_router(stats.router,        prefix="/api/stats",         tags=["stats"])
+app.include_router(motifs.router,       prefix="/api/motifs",        tags=["motifs"])
 app.include_router(live.router,         prefix="/live",              tags=["live"])
 
-
-# ── Page routes ────────────────────────────────────────────────────────────────
+# ── Single page app — all views handled client-side ───────────────────────────
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
-
-@app.get("/agents", response_class=HTMLResponse)
-async def agents_page(request: Request):
-    return templates.TemplateResponse("agents.html", {"request": request})
-
-
-@app.get("/observations", response_class=HTMLResponse)
-async def observations_page(request: Request):
-    return templates.TemplateResponse("observations.html", {"request": request})
-
-
-@app.get("/semantic", response_class=HTMLResponse)
-async def semantic_page(request: Request):
-    return templates.TemplateResponse("semantic.html", {"request": request})
-
-
-@app.get("/stream", response_class=HTMLResponse)
-async def live_page(request: Request):
-    return templates.TemplateResponse("live.html", {"request": request})
+# Legacy routes redirect to SPA
+@app.get("/{path:path}", response_class=HTMLResponse)
+async def spa_fallback(request: Request, path: str):
+    return templates.TemplateResponse("index.html", {"request": request})

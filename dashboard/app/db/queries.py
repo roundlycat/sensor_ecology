@@ -2,8 +2,6 @@
 All database queries for the dashboard.
 Each function acquires a connection from the pool, runs its query, and returns
 plain Python dicts so callers are not coupled to asyncpg Record objects.
-
-Adding a new query: add a new async function here and call it from an API module.
 """
 
 from typing import Optional
@@ -11,7 +9,7 @@ from typing import Optional
 from app.db.connection import get_pool
 
 
-# ── Observations ───────────────────────────────────────────────────────────────
+# ── Observations (unified: legacy + perceptual) ────────────────────────────────
 
 async def get_recent_observations(
     limit: int = 50,
@@ -126,6 +124,156 @@ async def get_observation_types() -> list[str]:
     return [r["observation_type"] for r in rows]
 
 
+# ── Perceptual events (new schema, richer) ────────────────────────────────────
+
+async def get_perceptual_events(
+    limit: int = 50,
+    domain: Optional[str] = None,
+    since: Optional[str] = None,
+) -> list[dict]:
+    """Rich perceptual events with vitals and nearest resonance."""
+    pool = get_pool()
+    sql = """
+        SELECT
+            pe.id::text,
+            an.node_name,
+            pe.domain::text,
+            pe.event_label,
+            pe.confidence::text,
+            pe.event_start,
+            pe.is_cross_domain,
+            pe.domains_involved::text[],
+            pe.agent_power_mw,
+            pe.agent_temp_c,
+            pe.agent_cpu_load_pct,
+            pe.feature_snapshot,
+            mr.cosine_distance   AS nearest_motif_distance,
+            mr.resonance_type,
+            m.label              AS nearest_motif_label
+        FROM perceptual_events pe
+        JOIN agent_nodes an ON an.id = pe.agent_node_id
+        LEFT JOIN motif_resonance mr
+            ON mr.perceptual_event_id = pe.id AND mr.is_nearest = TRUE
+        LEFT JOIN motifs m ON m.id = mr.motif_id
+        WHERE ($1::text IS NULL OR pe.domain::text = $1)
+          AND ($2::text IS NULL OR pe.event_start >= $2::timestamptz)
+        ORDER BY pe.event_start DESC
+        LIMIT $3
+    """
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(sql, domain, since, limit)
+    return [dict(r) for r in rows]
+
+
+async def get_domain_activity(hours: int = 24) -> list[dict]:
+    """Event counts by domain over the last N hours, in 1-hour buckets."""
+    pool = get_pool()
+    sql = """
+        SELECT
+            date_trunc('hour', event_start)  AS bucket,
+            domain::text,
+            COUNT(*)                          AS event_count,
+            AVG(CASE confidence
+                WHEN 'high'     THEN 1.0
+                WHEN 'moderate' THEN 0.6
+                WHEN 'low'      THEN 0.3
+                ELSE 0.5
+            END)                              AS avg_confidence
+        FROM perceptual_events
+        WHERE event_start >= NOW() - ($1 || ' hours')::INTERVAL
+        GROUP BY bucket, domain
+        ORDER BY bucket ASC, domain
+    """
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(sql, str(hours))
+    return [dict(r) for r in rows]
+
+
+async def get_ecology_state() -> dict:
+    """
+    Current state of the ecology: latest reading per domain,
+    Pi vitals, and most recently resonated motif.
+    """
+    pool = get_pool()
+    async with pool.acquire() as conn:
+        # Latest event per domain
+        domain_latest = await conn.fetch("""
+            SELECT DISTINCT ON (domain)
+                domain::text,
+                event_label,
+                confidence::text,
+                event_start,
+                agent_temp_c,
+                agent_power_mw,
+                agent_cpu_load_pct,
+                feature_snapshot
+            FROM perceptual_events
+            ORDER BY domain, event_start DESC
+        """)
+
+        # Most recent Pi vitals (any event with vitals)
+        vitals = await conn.fetchrow("""
+            SELECT
+                agent_temp_c,
+                agent_power_mw,
+                agent_cpu_load_pct,
+                event_start AS recorded_at
+            FROM perceptual_events
+            WHERE agent_temp_c IS NOT NULL
+            ORDER BY event_start DESC
+            LIMIT 1
+        """)
+
+        # Most recently resonated motif
+        latest_resonance = await conn.fetchrow("""
+            SELECT
+                m.label,
+                mr.cosine_distance,
+                mr.resonance_type,
+                mr.observed_at,
+                pe.domain::text
+            FROM motif_resonance mr
+            JOIN motifs m ON m.id = mr.motif_id
+            JOIN perceptual_events pe ON pe.id = mr.perceptual_event_id
+            ORDER BY mr.observed_at DESC
+            LIMIT 1
+        """)
+
+        # Active motifs in the last hour
+        active_motifs = await conn.fetch("""
+            SELECT
+                m.label,
+                COUNT(mr.id)            AS echo_count,
+                MIN(mr.cosine_distance) AS closest_distance,
+                MAX(mr.observed_at)     AS last_resonance,
+                pe.domain::text         AS dominant_domain
+            FROM motif_resonance mr
+            JOIN motifs m ON m.id = mr.motif_id
+            JOIN perceptual_events pe ON pe.id = mr.perceptual_event_id
+            WHERE mr.observed_at >= NOW() - INTERVAL '1 hour'
+            GROUP BY m.label, pe.domain
+            ORDER BY echo_count DESC
+            LIMIT 5
+        """)
+
+        # Total event counts today
+        totals = await conn.fetchrow("""
+            SELECT
+                COUNT(*) FILTER (WHERE event_start >= NOW() - INTERVAL '24 hours')  AS today,
+                COUNT(*) FILTER (WHERE event_start >= NOW() - INTERVAL '1 hour')    AS last_hour,
+                COUNT(*) FILTER (WHERE event_start >= NOW() - INTERVAL '5 minutes') AS last_5min
+            FROM perceptual_events
+        """)
+
+    return {
+        "domain_latest":     [dict(r) for r in domain_latest],
+        "vitals":            dict(vitals) if vitals else None,
+        "latest_resonance":  dict(latest_resonance) if latest_resonance else None,
+        "active_motifs":     [dict(r) for r in active_motifs],
+        "totals":            dict(totals) if totals else {},
+    }
+
+
 # ── Agents ─────────────────────────────────────────────────────────────────────
 
 async def get_all_agents() -> list[dict]:
@@ -182,6 +330,88 @@ async def get_agent_types() -> list[str]:
     return [r["agent_type"] for r in rows]
 
 
+async def get_agent_nodes() -> list[dict]:
+    pool = get_pool()
+    sql = """
+        SELECT
+            an.id::text,
+            an.node_name,
+            an.node_type,
+            an.location_label,
+            an.registered_at,
+            an.last_heartbeat_at,
+            COUNT(pe.id)   AS event_count,
+            MAX(pe.event_start) AS last_event
+        FROM agent_nodes an
+        LEFT JOIN perceptual_events pe ON pe.agent_node_id = an.id
+        GROUP BY an.id
+        ORDER BY last_event DESC NULLS LAST
+    """
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(sql)
+    return [dict(r) for r in rows]
+
+
+# ── Motifs ─────────────────────────────────────────────────────────────────────
+
+async def get_active_motifs(limit: int = 30) -> list[dict]:
+    """Motifs with resonance activity, ordered by recency."""
+    pool = get_pool()
+    sql = """
+        SELECT
+            m.id::text,
+            m.label,
+            COUNT(mr.id)              AS resonance_count,
+            MIN(mr.cosine_distance)   AS min_distance,
+            AVG(mr.cosine_distance)   AS avg_distance,
+            MAX(mr.observed_at)       AS last_resonance,
+            (m.centroid_embedding IS NOT NULL) AS has_embedding,
+            -- dominant domain
+            (
+                SELECT pe2.domain::text
+                FROM motif_resonance mr2
+                JOIN perceptual_events pe2 ON pe2.id = mr2.perceptual_event_id
+                WHERE mr2.motif_id = m.id
+                GROUP BY pe2.domain
+                ORDER BY COUNT(*) DESC
+                LIMIT 1
+            ) AS dominant_domain
+        FROM motifs m
+        LEFT JOIN motif_resonance mr ON mr.motif_id = m.id
+        GROUP BY m.id
+        HAVING COUNT(mr.id) > 0
+        ORDER BY last_resonance DESC NULLS LAST
+        LIMIT $1
+    """
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(sql, limit)
+    return [dict(r) for r in rows]
+
+
+async def get_motif_echoes(motif_id: str, limit: int = 20) -> list[dict]:
+    """Recent perceptual events that echoed a given motif."""
+    pool = get_pool()
+    sql = """
+        SELECT
+            pe.id::text,
+            an.node_name,
+            pe.domain::text,
+            pe.event_label,
+            pe.event_start,
+            mr.cosine_distance,
+            mr.resonance_type
+        FROM motif_resonance mr
+        JOIN perceptual_events pe ON pe.id = mr.perceptual_event_id
+        JOIN agent_nodes an ON an.id = pe.agent_node_id
+        WHERE mr.motif_id = $1::uuid
+        ORDER BY mr.observed_at DESC
+        LIMIT $2
+    """
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(sql, motif_id, limit)
+    return [dict(r) for r in rows]
+
+
 # ── Semantic search ────────────────────────────────────────────────────────────
 
 async def find_similar_observations(
@@ -189,11 +419,6 @@ async def find_similar_observations(
     threshold: float = 0.70,
     limit: int = 10,
 ) -> list[dict]:
-    """
-    Call the pgvector similar_observations() function defined in schema.sql.
-    The embedding is passed as a vector literal string and cast inside the SQL
-    to avoid asyncpg type-inference issues with the custom vector type.
-    """
     pool = get_pool()
     vec_literal = "[" + ",".join(f"{v:.6f}" for v in embedding) + "]"
     sql = f"""
@@ -266,7 +491,7 @@ async def get_dashboard_stats() -> dict:
                 JOIN agent_nodes an ON an.id = pe.agent_node_id
             ) combined
             ORDER BY observed_at DESC
-            LIMIT 5
+            LIMIT 10
             """
         )
     return {

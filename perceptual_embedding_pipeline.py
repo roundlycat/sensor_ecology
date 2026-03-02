@@ -33,6 +33,57 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
+async def kanban_hook(
+    pool:        asyncpg.Pool,
+    board_id:    str,
+    event_label: str,
+    domain,
+    readings:    list,
+) -> None:
+    """Create a kanban card from a pipeline event."""
+    import json
+    from uuid import UUID
+
+    # Only card-worthy events
+    CARD_WORTHY = {
+        "presence_detected", "thermal_approach",
+        "presence_departed", "thermal_retreat", "thermal_motion"
+    }
+    if event_label not in CARD_WORTHY:
+        return
+
+    # Extract useful values from readings for description
+    by_ch = {r.channel: r.raw_value for r in readings}
+    max_t  = by_ch.get("max_temp_c",      "?")
+    mean_t = by_ch.get("mean_temp_c",     "?")
+    score  = by_ch.get("presence_score",  "?")
+    delta  = by_ch.get("frame_delta_rms", "?")
+
+    description = (
+        f"Thermal field event: {event_label}. "
+        f"Max temp {max_t}°C, ambient mean {mean_t}°C. "
+        f"Presence score {score}, frame delta RMS {delta}. "
+        f"Domain: {domain.value}."
+    )
+
+    payload = json.dumps({
+        "max_temp_c":     max_t,
+        "mean_temp_c":    mean_t,
+        "presence_score": score,
+        "frame_delta":    delta,
+    })
+
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM create_sensor_alert_card($1,$2,$3,$4,$5::jsonb)",
+            UUID(board_id),
+            "pi5-thermal",
+            event_label,
+            description,
+            payload,
+        )
+        logger.info("Kanban card created: %s [%s]", event_label, row["id"])
+
 
 # ---------------------------------------------------------------------------
 # Domain types (mirror your SQL enums)
@@ -528,6 +579,7 @@ class PerceptualEmbeddingPipeline:
         classifier:  MotifResonanceClassifier,
         writer:      PerceptualEventWriter,
         agent_node_id: UUID,
+        kanban_hook=None,
     ):
         self.pool          = pool
         self.embedder      = embedder
@@ -535,12 +587,14 @@ class PerceptualEmbeddingPipeline:
         self.classifier    = classifier
         self.writer        = writer
         self.agent_node_id = agent_node_id
+        self.kanban_hook   = kanban_hook
 
     @classmethod
     async def build(
         cls,
         pool:               asyncpg.Pool,
         agent_node_id:      UUID,
+        kanban_hook=None,
         use_local_embedder: bool = False,
         local_endpoint:     str  = "http://localhost:11434/api/embeddings",
         local_model:        str  = "nomic-embed-text",
@@ -551,7 +605,7 @@ class PerceptualEmbeddingPipeline:
         packer     = FeaturePacker()
         classifier = MotifResonanceClassifier(pool)
         writer     = PerceptualEventWriter(pool)
-        return cls(pool, embedder, packer, classifier, writer, agent_node_id)
+        return cls(pool, embedder, packer, classifier, writer, agent_node_id, kanban_hook)
 
     async def process(
         self,
@@ -608,7 +662,14 @@ class PerceptualEmbeddingPipeline:
             )
         else:
             logger.info("Event %s -> no resonance found", event.id)
+        # 7. Optional kanban card creation
+        if self.kanban_hook and event_label and event_label != "thermal_shift":
+            try:
+                await self.kanban_hook(event_label, domain, readings)
+            except Exception as e:
+                logger.warning("Kanban hook failed: %s", e)
 
+        return event
         return event
 
     async def process_batch(

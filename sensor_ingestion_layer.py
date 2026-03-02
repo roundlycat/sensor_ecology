@@ -36,8 +36,10 @@ from abc import ABC, abstractmethod
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+import functools
 from typing import Callable, Optional
 from uuid import UUID
+
 
 import paho.mqtt.client as mqtt
 
@@ -746,8 +748,9 @@ class HighBandwidthPoller(SensorPoller):
 
     async def _init_hardware(self) -> None:
         self._loop = asyncio.get_running_loop()
+        import os
         client = mqtt.Client(
-            client_id=f"hbw-poller-{self._thermal_node}",
+            client_id=f"hbw-poller-{self._thermal_node}-{os.getpid()}",
             callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
         )
         client.on_connect    = self._on_mqtt_connect
@@ -1074,6 +1077,19 @@ class IngestionCoordinator:
             )
         return pollers
 
+    async def _heartbeat_loop(self) -> None:
+        """Periodically stamp last_heartbeat_at so the monitor shows this node as online."""
+        while True:
+            try:
+                async with self.pool.acquire() as conn:
+                    await conn.execute(
+                        "UPDATE agent_nodes SET last_heartbeat_at = NOW() WHERE id = $1",
+                        self.agent_node_id,
+                    )
+            except Exception as exc:
+                logger.warning("Heartbeat update failed: %s", exc)
+            await asyncio.sleep(30)
+
     async def start(self) -> None:
         self._pollers = self._build_pollers()
 
@@ -1089,6 +1105,11 @@ class IngestionCoordinator:
                 name=f"poller_{poller.domain.value}",
             )
             self._tasks.append(task)
+
+        # Heartbeat task — keeps last_heartbeat_at current for the monitor
+        self._tasks.append(asyncio.create_task(
+            self._heartbeat_loop(), name="heartbeat",
+        ))
 
         logger.info(
             "IngestionCoordinator started: %d pollers active", len(self._pollers)
@@ -1138,14 +1159,21 @@ async def main() -> None:
     THERMAL_NODE       = os.environ.get("THERMAL_NODE_NAME")          # e.g. "pi5-thermal"
     MQTT_BROKER_HOST   = os.environ.get("MQTT_BROKER_HOST", "localhost")
     MQTT_BROKER_PORT   = int(os.environ.get("MQTT_BROKER_PORT", "1883"))
+    KANBAN_BOARD_ID    = os.environ.get("KANBAN_BOARD_ID")
 
     pool = await asyncpg.create_pool(DB_URL, min_size=2, max_size=10)
+
+    hook = None
+    if KANBAN_BOARD_ID:
+        from perceptual_embedding_pipeline import kanban_hook
+        hook = functools.partial(kanban_hook, pool, KANBAN_BOARD_ID)
 
     pipeline = await PerceptualEmbeddingPipeline.build(
         pool=pool,
         agent_node_id=NODE_ID,
         use_local_embedder=USE_LOCAL,
-    )
+        kanban_hook=hook 
+   )
 
     coordinator = IngestionCoordinator(
         pipeline=pipeline,

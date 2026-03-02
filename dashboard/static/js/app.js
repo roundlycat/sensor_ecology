@@ -27,8 +27,17 @@ const UI = {
    */
   typeBadge(type) {
     const colors = {
+      // high_bandwidth thermal domain (HighBandwidthPoller labels)
+      thermal_shift:      'orange',
+      thermal_approach:   'red',
+      thermal_retreat:    'yellow',
+      thermal_motion:     'orange',
+      presence_detected:  'red',
+      presence_departed:  'yellow',
+      // legacy / observations table labels
       thermal_anomaly:    'red',
       thermal_change:     'orange',
+      // other domains
       motion_detected:    'yellow',
       extreme_cold:       'red',
       high_light:         'yellow',
@@ -36,6 +45,24 @@ const UI = {
       occupancy_detected: 'orange',
       object_identified:  'purple',
       rfid_scan:          'purple',
+      // ESP32 motion labels (MPU-6050)
+      idle:               'green',
+      typing:             'yellow',
+      footsteps:          'orange',
+      impact:             'red',
+      equipment_running:  'orange',
+      // ESP32 light labels (TCS34725)
+      dark:               'purple',
+      dim_warm:           'yellow',
+      daylight:           'green',
+      overcast:           'yellow',
+      screen_dominant:    'purple',
+      artificial_warm:    'orange',
+      // perceptual domains
+      embodied_state:     'orange',
+      environmental_field:'green',
+      relational_contact: 'yellow',
+      high_bandwidth:     'red',
     };
     const cls = colors[type] || '';
     return `<span class="badge ${cls}">${type.replace(/_/g, ' ')}</span>`;

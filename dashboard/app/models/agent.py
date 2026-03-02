@@ -16,3 +16,10 @@ class Agent(BaseModel):
     observation_count: Optional[int] = None
 
     model_config = {"from_attributes": True}
+
+
+class NodeRegister(BaseModel):
+    node_name: str
+    node_type: Optional[str] = None
+    location_label: Optional[str] = None
+    metadata: Optional[dict] = None

@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from app.db.connection import init_pool, close_pool
-from app.api import agents, observations, semantic, live, stats
+from app.api import agents, observations, semantic, live, stats, nodes
 
 BASE_DIR = Path(__file__).parent
 
@@ -35,6 +35,7 @@ app.include_router(observations.router, prefix="/api/observations",  tags=["obse
 app.include_router(semantic.router,     prefix="/api/semantic",      tags=["semantic"])
 app.include_router(stats.router,        prefix="/api/stats",         tags=["stats"])
 app.include_router(live.router,         prefix="/live",              tags=["live"])
+app.include_router(nodes.router,        prefix="/api/nodes",         tags=["nodes"])
 
 
 # ── Page routes ────────────────────────────────────────────────────────────────
@@ -61,3 +62,8 @@ async def semantic_page(request: Request):
 @app.get("/stream", response_class=HTMLResponse)
 async def live_page(request: Request):
     return templates.TemplateResponse("live.html", {"request": request})
+
+
+@app.get("/monitor", response_class=HTMLResponse)
+async def monitor_page(request: Request):
+    return templates.TemplateResponse("monitor.html", {"request": request})

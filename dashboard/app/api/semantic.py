@@ -13,7 +13,7 @@ async def semantic_search(req: SearchRequest):
     Embed the query string with all-MiniLM-L6-v2, then find observations
     whose stored embeddings are within `threshold` cosine similarity.
     """
-    embedding = embed_text(req.query)
+    embedding = await embed_text(req.query)
     return await queries.find_similar_observations(
         embedding=embedding,
         threshold=req.threshold,

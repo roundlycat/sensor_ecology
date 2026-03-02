@@ -3,6 +3,27 @@
 
 {% block content %}
 <h1 class="page-title">Agents</h1>
+
+<details style="margin-bottom:1.25rem">
+  <summary style="cursor:pointer;font-weight:600">Register device</summary>
+  <div style="margin-top:0.75rem;display:flex;gap:0.6rem;flex-wrap:wrap;align-items:flex-end">
+    <label style="display:flex;flex-direction:column;gap:0.2rem;font-size:0.85rem">
+      Node name <span class="muted small">(required)</span>
+      <input id="reg-name" type="text" placeholder="e.g. inferno" style="width:160px" />
+    </label>
+    <label style="display:flex;flex-direction:column;gap:0.2rem;font-size:0.85rem">
+      Node type
+      <input id="reg-type" type="text" placeholder="e.g. pi5, esp32" style="width:120px" />
+    </label>
+    <label style="display:flex;flex-direction:column;gap:0.2rem;font-size:0.85rem">
+      Location
+      <input id="reg-location" type="text" placeholder="e.g. workshop" style="width:160px" />
+    </label>
+    <button onclick="registerNode()">Register</button>
+    <span class="muted small" id="reg-status"></span>
+  </div>
+</details>
+
 <div id="agents-table"><div class="loading">Loading…</div></div>
 {% endblock %}
 
@@ -41,7 +62,7 @@ async function loadAgents() {
               </td>
               <td>${(a.observation_count || 0).toLocaleString()}</td>
               <td class="small muted">${
-                a.capabilities
+                a.capabilities && Object.keys(a.capabilities).length
                   ? Object.entries(a.capabilities)
                       .map(([k, v]) => `${k}: ${JSON.stringify(v)}`)
                       .join(', ')
@@ -52,6 +73,30 @@ async function loadAgents() {
         </tbody>
       </table>
     </div>`;
+}
+
+async function registerNode() {
+  const name     = document.getElementById('reg-name').value.trim();
+  const type     = document.getElementById('reg-type').value.trim() || null;
+  const location = document.getElementById('reg-location').value.trim() || null;
+  const status   = document.getElementById('reg-status');
+
+  if (!name) { status.textContent = 'Node name is required.'; return; }
+
+  try {
+    await apiFetch('/api/agents/nodes/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node_name: name, node_type: type, location_label: location }),
+    });
+    status.textContent = `✓ Registered "${name}"`;
+    document.getElementById('reg-name').value     = '';
+    document.getElementById('reg-type').value     = '';
+    document.getElementById('reg-location').value = '';
+    loadAgents();
+  } catch (e) {
+    status.textContent = `Error: ${e.message}`;
+  }
 }
 
 loadAgents().catch(e =>

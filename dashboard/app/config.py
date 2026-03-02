@@ -18,4 +18,5 @@ DB_DSN: str = os.environ.get(
 DASHBOARD_HOST: str = os.environ.get("DASHBOARD_HOST", "0.0.0.0")
 DASHBOARD_PORT: int = int(os.environ.get("DASHBOARD_PORT", "8000"))
 
-EMBEDDING_MODEL: str = os.environ.get("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+EMBEDDING_MODEL: str = os.environ.get("EMBEDDING_MODEL", "nomic-embed-text")
+OLLAMA_URL: str = os.environ.get("OLLAMA_URL", "http://localhost:11434/api/embeddings")

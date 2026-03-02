@@ -1,0 +1,246 @@
+{% extends "base.html" %}
+{% block title %}Monitor{% endblock %}
+
+{% block content %}
+<h1 class="page-title">
+  Node Monitor
+  <span class="muted small" id="refresh-status" style="font-weight:400;margin-left:0.75rem"></span>
+</h1>
+
+<div id="nodes-grid" class="nodes-grid">
+  <div class="loading">Loading nodes…</div>
+</div>
+
+<!-- Per-node event history (shown below grid when a node is selected) -->
+<div id="node-detail" style="display:none;margin-top:2rem">
+  <div style="display:flex;align-items:center;gap:0.75rem;margin-bottom:1rem">
+    <h2 class="page-title" style="margin:0" id="detail-title"></h2>
+    <button class="secondary" style="font-size:0.8rem" onclick="closeDetail()">✕ Close</button>
+  </div>
+  <div id="detail-events"><div class="loading">Loading…</div></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const CONF_FLOAT = { high: 0.87, moderate: 0.6, low: 0.3, synthetic: 0.5 };
+let refreshTimer = null;
+let selectedNode = null;
+
+// ── Confidence label → float for confBar ─────────────────────────────────────
+function confFromLabel(label) {
+  return CONF_FLOAT[label] ?? 0.5;
+}
+
+// ── Online indicator ─────────────────────────────────────────────────────────
+function onlineIndicator(lastHb) {
+  if (!lastHb) return '<span class="badge">never seen</span>';
+  const ageMs = Date.now() - new Date(lastHb).getTime();
+  const online = ageMs < 90_000;   // >90s = consider offline
+  const cls    = online ? 'badge green' : 'badge';
+  const label  = online ? 'online' : UI.formatTime(lastHb);
+  return `<span class="${cls}">${label}</span>`;
+}
+
+// ── RSSI bar ─────────────────────────────────────────────────────────────────
+function rssiBar(meta) {
+  if (!meta || meta.rssi_dbm == null) return '<span class="muted small">—</span>';
+  const rssi = meta.rssi_dbm;
+  const pct  = Math.max(0, Math.min(100, (rssi + 100) * 2));  // -100…0 dBm → 0…100%
+  const cls  = pct > 66 ? '' : pct > 33 ? 'medium' : 'low';
+  return `
+    <div class="conf-bar" title="${rssi} dBm">
+      <div class="bar"><div class="fill ${cls}" style="width:${pct}%"></div></div>
+      <span class="small muted">${rssi} dBm</span>
+    </div>`;
+}
+
+// ── Render raw sensor values from feature_snapshot ───────────────────────────
+const _RAW_SKIP = new Set(['confidence_f', 'label', 'domain']);
+
+function renderRaw(raw) {
+  if (!raw) return '';
+  const pairs = [];
+  for (const [k, v] of Object.entries(raw)) {
+    if (_RAW_SKIP.has(k) || v === null || v === undefined) continue;
+    if (typeof v === 'object') {
+      // Flatten one level — e.g. channels: {cpu_temp_c: 50} → "cpu temp c: 50"
+      for (const [ck, cv] of Object.entries(v)) {
+        if (cv === null || cv === undefined || typeof cv === 'object') continue;
+        const val = typeof cv === 'number' ? cv.toFixed(cv < 1 ? 4 : 1) : cv;
+        pairs.push(`<span class="small muted">${ck.replace(/_/g,' ')}: <strong>${val}</strong></span>`);
+      }
+    } else {
+      const val = typeof v === 'number' ? v.toFixed(v < 1 ? 4 : 1) : v;
+      pairs.push(`<span class="small muted">${k.replace(/_/g,' ')}: <strong>${val}</strong></span>`);
+    }
+  }
+  return pairs.join('&ensp;·&ensp;');
+}
+
+// ── Build one node card ───────────────────────────────────────────────────────
+function buildCard(node) {
+  const meta = typeof node.metadata === 'string'
+    ? JSON.parse(node.metadata || '{}')
+    : (node.metadata || {});
+
+  const caps = Array.isArray(meta.capabilities)
+    ? meta.capabilities.map(c => `<span class="badge">${c}</span>`).join(' ')
+    : '';
+
+  const motionSection = node.motion_label
+    ? `<div class="node-row">
+         <span class="node-row-label">motion</span>
+         <div>
+           ${UI.typeBadge(node.motion_label)}
+           ${UI.confBar(confFromLabel(node.motion_confidence))}
+           <div style="margin-top:0.25rem">${renderRaw(
+             typeof node.motion_raw === 'string'
+               ? JSON.parse(node.motion_raw)
+               : node.motion_raw
+           )}</div>
+         </div>
+       </div>`
+    : `<div class="node-row"><span class="node-row-label">motion</span>
+         <span class="muted small">no data yet</span></div>`;
+
+  const lightSection = node.light_label
+    ? `<div class="node-row">
+         <span class="node-row-label">light</span>
+         <div>
+           ${UI.typeBadge(node.light_label)}
+           ${UI.confBar(confFromLabel(node.light_confidence))}
+           <div style="margin-top:0.25rem">${renderRaw(
+             typeof node.light_raw === 'string'
+               ? JSON.parse(node.light_raw)
+               : node.light_raw
+           )}</div>
+         </div>
+       </div>`
+    : `<div class="node-row"><span class="node-row-label">light</span>
+         <span class="muted small">no data yet</span></div>`;
+
+  const thermalSection = node.thermal_label
+    ? `<div class="node-row">
+         <span class="node-row-label">thermal</span>
+         <div>
+           ${UI.typeBadge(node.thermal_label)}
+           ${UI.confBar(confFromLabel(node.thermal_confidence))}
+           <div style="margin-top:0.25rem">${renderRaw(
+             typeof node.thermal_raw === 'string'
+               ? JSON.parse(node.thermal_raw)
+               : node.thermal_raw
+           )}</div>
+         </div>
+       </div>`
+    : '';
+
+  return `
+    <div class="node-card" onclick="selectNode('${node.node_name}')">
+      <div class="node-header">
+        <strong>${node.node_name}</strong>
+        ${onlineIndicator(node.last_heartbeat_at)}
+      </div>
+      <div class="node-meta">
+        ${node.node_type ? `<span class="badge">${node.node_type}</span>` : ''}
+        ${node.location_label
+          ? `<span class="muted small">📍 ${node.location_label}</span>`
+          : ''}
+      </div>
+      ${caps ? `<div style="margin:0.4rem 0">${caps}</div>` : ''}
+      <div class="node-row">
+        <span class="node-row-label">signal</span>
+        ${rssiBar(meta)}
+      </div>
+      ${meta.uptime_ms != null
+        ? `<div class="node-row">
+             <span class="node-row-label">uptime</span>
+             <span class="small muted">${Math.floor(meta.uptime_ms / 1000)}s</span>
+           </div>`
+        : ''}
+      ${motionSection}
+      ${lightSection}
+      ${thermalSection}
+      <div class="node-footer muted small">
+        ${node.last_heartbeat_at
+          ? 'last hb ' + UI.formatTime(node.last_heartbeat_at)
+          : 'never seen'}
+        &ensp;·&ensp; click for history
+      </div>
+    </div>`;
+}
+
+// ── Load + render grid ────────────────────────────────────────────────────────
+async function loadNodes() {
+  const grid = document.getElementById('nodes-grid');
+  const nodes = await apiFetch('/api/nodes/');
+  if (!nodes.length) {
+    UI.empty(grid, 'No nodes registered. Run the MQTT bridge and wait for a heartbeat.');
+    return;
+  }
+  grid.innerHTML = nodes.map(buildCard).join('');
+  document.getElementById('refresh-status').textContent =
+    `refreshed ${UI.formatTime(new Date().toISOString())}`;
+
+  // Re-render detail if open
+  if (selectedNode) loadDetail(selectedNode);
+}
+
+// ── Node event history ────────────────────────────────────────────────────────
+async function selectNode(name) {
+  selectedNode = name;
+  document.getElementById('node-detail').style.display = 'block';
+  document.getElementById('detail-title').textContent = name;
+  document.getElementById('detail-events').innerHTML =
+    '<div class="loading">Loading…</div>';
+  document.getElementById('node-detail').scrollIntoView({ behavior: 'smooth' });
+  await loadDetail(name);
+}
+
+async function loadDetail(name) {
+  const el = document.getElementById('detail-events');
+  const events = await apiFetch(`/api/nodes/${name}/events?limit=50`);
+  if (!events.length) { UI.empty(el, 'No events recorded yet.'); return; }
+
+  el.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Time</th><th>Domain</th><th>Event</th>
+            <th>Conf</th><th>Raw</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${events.map(e => `
+            <tr>
+              <td class="muted small" style="white-space:nowrap">
+                ${UI.formatTime(e.event_start)}
+              </td>
+              <td>${UI.typeBadge(e.domain)}</td>
+              <td>${UI.typeBadge(e.event_label)}</td>
+              <td>${UI.confBar(confFromLabel(e.confidence))}</td>
+              <td class="small muted">${renderRaw(
+                typeof e.feature_snapshot === 'string'
+                  ? JSON.parse(e.feature_snapshot)
+                  : e.feature_snapshot
+              )}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function closeDetail() {
+  selectedNode = null;
+  document.getElementById('node-detail').style.display = 'none';
+}
+
+// ── Auto-refresh every 10s ────────────────────────────────────────────────────
+loadNodes().catch(e => UI.error(document.getElementById('nodes-grid'), e.message));
+refreshTimer = setInterval(() => {
+  loadNodes().catch(() => {});
+}, 10_000);
+</script>
+{% endblock %}

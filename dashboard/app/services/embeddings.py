@@ -1,28 +1,20 @@
 """
-Embedding service — lazy singleton over the sentence-transformers model.
-
-The same all-MiniLM-L6-v2 model used by the agents is reused here so that
-semantic search queries produce embeddings in the same vector space.
+Embedding service — calls the local Ollama endpoint used by the ingestion pipeline,
+keeping the query vector in the same space as stored perceptual_events.embedding.
 """
 
-import threading
+import httpx
 
-from app.config import EMBEDDING_MODEL
-
-_model = None
-_lock = threading.Lock()
+from app.config import EMBEDDING_MODEL, OLLAMA_URL
 
 
-def _get_model():
-    global _model
-    if _model is None:
-        with _lock:
-            if _model is None:
-                from sentence_transformers import SentenceTransformer
-                _model = SentenceTransformer(EMBEDDING_MODEL)
-    return _model
-
-
-def embed_text(text: str) -> list[float]:
-    """Return a 384-dim embedding for a query string."""
-    return _get_model().encode(text).tolist()
+async def embed_text(text: str) -> list[float]:
+    """Return an embedding for a query string via Ollama."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.post(
+            OLLAMA_URL,
+            json={"model": EMBEDDING_MODEL, "prompt": text},
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        return resp.json()["embedding"]

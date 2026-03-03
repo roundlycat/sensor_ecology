@@ -3,10 +3,8 @@ Sensor Ecology Dashboard — entry point.
 Run: uvicorn main:app --host 0.0.0.0 --port 9500
 """
 
-<<<<<<< HEAD
-=======
+
 import asyncio
->>>>>>> a66c8a5c42b2a9a97d52513986abd37e5a4e5345
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -17,26 +15,18 @@ from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.db.connection import init_pool, close_pool
-<<<<<<< HEAD
-from app.api import agents, observations, semantic, live, stats
-from app.api import motifs
-=======
+
 from app.db.corpus_connection import init_corpus_pool, close_corpus_pool
 from app.api import agents, observations, semantic, live, stats, motifs
 from app.api import corpus
 from app.services.narrator import start_narrator_loop
->>>>>>> a66c8a5c42b2a9a97d52513986abd37e5a4e5345
 
 BASE_DIR = Path(__file__).parent
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-<<<<<<< HEAD
-    await init_pool()
-    yield
-    await close_pool()
-=======
+
     # Sensor ecology DB (required)
     await init_pool()
 
@@ -51,7 +41,6 @@ async def lifespan(app: FastAPI):
     narrator_task.cancel()
     await close_pool()
     await close_corpus_pool()
->>>>>>> a66c8a5c42b2a9a97d52513986abd37e5a4e5345
 
 
 app = FastAPI(title="Sensor Ecology Dashboard", lifespan=lifespan)
@@ -72,26 +61,18 @@ app.include_router(observations.router, prefix="/api/observations",  tags=["obse
 app.include_router(semantic.router,     prefix="/api/semantic",      tags=["semantic"])
 app.include_router(stats.router,        prefix="/api/stats",         tags=["stats"])
 app.include_router(motifs.router,       prefix="/api/motifs",        tags=["motifs"])
-<<<<<<< HEAD
-app.include_router(live.router,         prefix="/live",              tags=["live"])
 
-# ── Single page app — all views handled client-side ───────────────────────────
-=======
 app.include_router(corpus.router,       prefix="/api/corpus",        tags=["corpus"])
 app.include_router(live.router,         prefix="/live",              tags=["live"])
 
 
 # ── SPA — all page routes serve index.html ────────────────────────────────────
->>>>>>> a66c8a5c42b2a9a97d52513986abd37e5a4e5345
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
     return templates.TemplateResponse("index.html", {"request": request})
 
-<<<<<<< HEAD
-# Legacy routes redirect to SPA
-=======
 
->>>>>>> a66c8a5c42b2a9a97d52513986abd37e5a4e5345
+
 @app.get("/{path:path}", response_class=HTMLResponse)
 async def spa_fallback(request: Request, path: str):
     return templates.TemplateResponse("index.html", {"request": request})

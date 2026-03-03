@@ -10,10 +10,8 @@ from dotenv import load_dotenv
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-<<<<<<< HEAD
-=======
+
 # ── Sensor ecology database ───────────────────────────────────────────────────
->>>>>>> a66c8a5c42b2a9a97d52513986abd37e5a4e5345
 DB_DSN: str = os.environ.get(
     "DB_DSN",
     "postgresql://sean:ecology@localhost/sensor_ecology",
@@ -23,8 +21,7 @@ DASHBOARD_HOST: str = os.environ.get("DASHBOARD_HOST", "0.0.0.0")
 DASHBOARD_PORT: int = int(os.environ.get("DASHBOARD_PORT", "8000"))
 
 EMBEDDING_MODEL: str = os.environ.get("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
-<<<<<<< HEAD
-=======
+
 
 # ── Conversation archive (corpus) database ────────────────────────────────────
 # Set CORPUS_DB_DSN to enable cross-corpus resonance features.
@@ -48,4 +45,3 @@ CORPUS_META_COL:      str = os.environ.get("CORPUS_META_COL",      "metadata")
 OLLAMA_HOST:         str = os.environ.get("OLLAMA_HOST",         "http://localhost:11434")
 NARRATOR_MODEL:      str = os.environ.get("NARRATOR_MODEL",      "llama3.2")
 NARRATOR_INTERVAL_S: int = int(os.environ.get("NARRATOR_INTERVAL_S", "300"))
->>>>>>> a66c8a5c42b2a9a97d52513986abd37e5a4e5345

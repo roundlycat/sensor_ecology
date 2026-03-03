@@ -918,6 +918,241 @@ class HighBandwidthPoller(SensorPoller):
 
 
 # ---------------------------------------------------------------------------
+# MXChip AZ3166 acoustic listener poller
+# Bridges sensors/mxchip/status and sensors/mxchip/motif into the pipeline.
+# The device runs its own on-board classifier and publishes interpreted state,
+# not raw PCM — so readings are confidence scores, not sample amplitudes.
+# ---------------------------------------------------------------------------
+
+class MXChipAcousticPoller(SensorPoller):
+    """
+    Subscribes to the MXChip acoustic listener's two MQTT streams:
+
+        sensors/mxchip/status  — periodic confidence snapshot (30 s–5 min,
+                                 adaptive by stability).  Processed through
+                                 the normal threshold gate.
+        sensors/mxchip/motif   — concept formation event, published immediately
+                                 when the on-device classifier promotes a new
+                                 acoustic concept.  Bypasses the gate and is
+                                 forwarded to the pipeline with HIGH confidence.
+
+    The MXChip is registered as its own agent_node so its readings are
+    attributed to the physical device rather than the Pi.
+    """
+
+    NODE_NAME = "mxchip-acoustic"
+    NODE_TYPE = "mxchip_az3166"
+
+    DEFAULT_THRESHOLDS = DomainThresholds(
+        channels=[
+            ChangeThreshold("stability",    absolute=0.08, relative=0.10),
+            ChangeThreshold("broadband_c",  absolute=0.10, relative=0.15),
+            ChangeThreshold("transient_c",  absolute=0.10, relative=0.15),
+        ],
+        quorum=1,
+        cooldown_s=30.0,
+    )
+
+    def __init__(
+        self,
+        pipeline,
+        agent_state_fn,
+        db_writer,
+        broker_host: str = "localhost",
+        broker_port: int = 1883,
+        pool=None,          # asyncpg pool — used to register the MXChip node
+        **kwargs,
+    ):
+        super().__init__(
+            domain=SensorDomain.HIGH_BANDWIDTH,
+            thresholds=self.DEFAULT_THRESHOLDS,
+            poll_interval_s=0.5,    # drain queue at 2 Hz
+            pipeline=pipeline,
+            agent_state_fn=agent_state_fn,
+            db_writer=db_writer,
+            **kwargs,
+        )
+        self._broker_host    = broker_host
+        self._broker_port    = broker_port
+        self._pool           = pool
+        self._status_queue: asyncio.Queue = asyncio.Queue(maxsize=20)
+        self._concept_queue: asyncio.Queue = asyncio.Queue(maxsize=20)
+        self._mqtt_client: Optional[mqtt.Client] = None
+        self._loop: Optional[asyncio.AbstractEventLoop] = None
+
+    async def _init_hardware(self) -> None:
+        self._loop = asyncio.get_running_loop()
+
+        # Register the MXChip as its own agent_node and switch the writer to it.
+        if self._pool is not None:
+            node_id = await self._ensure_node_registered()
+            self.db_writer = SensorReadingWriter(self._pool, node_id)
+            logger.info(
+                "MXChipAcousticPoller: node '%s' → %s", self.NODE_NAME, node_id
+            )
+
+        import os
+        client = mqtt.Client(
+            client_id=f"mxchip-poller-{os.getpid()}",
+            callback_api_version=mqtt.CallbackAPIVersion.VERSION2,
+        )
+        client.on_connect    = self._on_mqtt_connect
+        client.on_message    = self._on_mqtt_message
+        client.on_disconnect = self._on_mqtt_disconnect
+        self._mqtt_client = client
+        try:
+            client.connect(self._broker_host, self._broker_port, keepalive=60)
+            client.loop_start()
+            logger.info(
+                "MXChipAcousticPoller: connected to broker %s:%d",
+                self._broker_host, self._broker_port,
+            )
+        except Exception as exc:
+            logger.warning("MXChipAcousticPoller: MQTT connect failed: %s", exc)
+
+    async def _ensure_node_registered(self) -> UUID:
+        """Upsert the MXChip as an agent_node and return its UUID."""
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                INSERT INTO agent_nodes (node_name, node_type, location_label)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (node_name) DO UPDATE
+                    SET last_heartbeat_at = NOW()
+                RETURNING id
+                """,
+                self.NODE_NAME, self.NODE_TYPE, "lab",
+            )
+        return row["id"]
+
+    # ── paho callbacks (run in paho's thread) ─────────────────────────────────
+
+    def _on_mqtt_connect(self, client, userdata, flags, reason_code, properties):
+        if reason_code == 0:
+            client.subscribe("sensors/mxchip/#", qos=0)
+            logger.info("MXChipAcousticPoller: subscribed to sensors/mxchip/#")
+        else:
+            logger.error(
+                "MXChipAcousticPoller: broker refused connection: %s", reason_code
+            )
+
+    def _on_mqtt_message(self, client, userdata, msg):
+        try:
+            payload = json.loads(msg.payload.decode())
+        except Exception as exc:
+            logger.warning("MXChipAcousticPoller: parse error: %s", exc)
+            return
+
+        if self._loop is None or self._loop.is_closed():
+            return
+
+        def _safe_put(queue, item):
+            try:
+                queue.put_nowait(item)
+            except asyncio.QueueFull:
+                try:
+                    queue.get_nowait()
+                    queue.put_nowait(item)
+                except Exception:
+                    pass
+
+        if msg.topic.endswith("/status"):
+            self._loop.call_soon_threadsafe(_safe_put, self._status_queue, payload)
+        elif msg.topic.endswith("/motif"):
+            self._loop.call_soon_threadsafe(_safe_put, self._concept_queue, payload)
+
+    def _on_mqtt_disconnect(self, client, userdata, flags, reason_code, properties):
+        if reason_code != 0:
+            logger.warning(
+                "MXChipAcousticPoller: disconnected unexpectedly (rc=%s)", reason_code
+            )
+
+    # ── SensorPoller interface ────────────────────────────────────────────────
+
+    async def _read_hardware(self) -> list[SensorReading]:
+        """Drain one status message and convert to SensorReadings."""
+        try:
+            payload = self._status_queue.get_nowait()
+        except asyncio.QueueEmpty:
+            return []
+
+        now    = datetime.now(timezone.utc)
+        domain = SensorDomain.HIGH_BANDWIDTH
+        return [
+            SensorReading("MXChip_mic", "baseline_c",  float(payload.get("baseline_c",  0.0)), "confidence", domain, recorded_at=now),
+            SensorReading("MXChip_mic", "hum_c",       float(payload.get("hum_c",       0.0)), "confidence", domain, recorded_at=now),
+            SensorReading("MXChip_mic", "broadband_c", float(payload.get("broadband_c", 0.0)), "confidence", domain, recorded_at=now),
+            SensorReading("MXChip_mic", "transient_c", float(payload.get("transient_c", 0.0)), "confidence", domain, recorded_at=now),
+            SensorReading("MXChip_mic", "stability",   float(payload.get("stability",   0.0)), "ratio",      domain, recorded_at=now),
+        ]
+
+    def _label_event(self, readings: list[SensorReading]) -> str:
+        by_ch     = {r.channel: r.raw_value for r in readings}
+        stability = by_ch.get("stability",   0.0)
+        transient = by_ch.get("transient_c", 0.0)
+        broadband = by_ch.get("broadband_c", 0.0)
+        if transient > 0.7:
+            return "acoustic_transient_detected"
+        if broadband > 0.7:
+            return "acoustic_broadband_activity"
+        if stability > 0.8:
+            return "acoustic_field_settled"
+        if stability < 0.3:
+            return "acoustic_field_unsettled"
+        return "acoustic_state_shift"
+
+    # ── Extended run loop — drains concept events before each poll cycle ───────
+
+    async def run(self) -> None:
+        self._running = True
+        logger.info("MXChipAcousticPoller started (poll=%.1fs)", self.poll_interval)
+        while self._running:
+            try:
+                await self._drain_concept_events()
+                await self._poll_cycle()
+            except Exception as exc:
+                logger.exception("MXChipAcousticPoller error: %s", exc)
+            await asyncio.sleep(self.poll_interval)
+
+    async def _drain_concept_events(self) -> None:
+        """Forward concept formation events to the pipeline with HIGH confidence."""
+        while True:
+            try:
+                payload = self._concept_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                return
+
+            now    = datetime.now(timezone.utc)
+            domain = SensorDomain.HIGH_BANDWIDTH
+            readings = [
+                SensorReading("MXChip_mic", "rms",       float(payload.get("rms",       0.0)), "",      domain, recorded_at=now),
+                SensorReading("MXChip_mic", "hum",       float(payload.get("hum",       0.0)), "",      domain, recorded_at=now),
+                SensorReading("MXChip_mic", "texture",   float(payload.get("texture",   0.0)), "",      domain, recorded_at=now),
+                SensorReading("MXChip_mic", "transient", float(payload.get("transient", 0.0)), "",      domain, recorded_at=now),
+                SensorReading("MXChip_mic", "stability", float(payload.get("stability", 0.0)), "count", domain, recorded_at=now),
+            ]
+            persisted   = await self.db_writer.write_readings(readings)
+            agent_state = self.agent_state_fn()
+            logger.info(
+                "MXChipAcousticPoller: concept formed — total=%s texture=%.3f",
+                payload.get("total_concepts", "?"), payload.get("texture", 0.0),
+            )
+            await self.pipeline.process(
+                readings=persisted,
+                domain=domain,
+                agent_state=agent_state,
+                event_label="acoustic_concept_formed",
+                confidence=FusionConfidence.HIGH,
+            )
+
+    def stop(self) -> None:
+        super().stop()
+        if self._mqtt_client:
+            self._mqtt_client.loop_stop()
+            self._mqtt_client.disconnect()
+
+
+# ---------------------------------------------------------------------------
 # Agent state provider
 # Central, mutable store for the agent's current metabolic state.
 # Updated by EmbodiedStatePoller; read by all other pollers when emitting events.
@@ -1040,6 +1275,7 @@ class IngestionCoordinator:
         thermal_node_name:  Optional[str] = None,
         mqtt_broker_host:   str = "localhost",
         mqtt_broker_port:   int = 1883,
+        enable_mxchip:      bool = False,
     ):
         self.pipeline          = pipeline
         self.pool              = db_pool
@@ -1047,6 +1283,7 @@ class IngestionCoordinator:
         self.thermal_node_name = thermal_node_name
         self.mqtt_broker_host  = mqtt_broker_host
         self.mqtt_broker_port  = mqtt_broker_port
+        self.enable_mxchip     = enable_mxchip
         self.state_provider    = AgentStateProvider()
         self._writer           = SensorReadingWriter(db_pool, agent_node_id)
         self._pollers: list[SensorPoller] = []
@@ -1075,6 +1312,14 @@ class IngestionCoordinator:
                 "HighBandwidthPoller enabled for thermal node '%s'",
                 self.thermal_node_name,
             )
+        if self.enable_mxchip:
+            pollers.append(MXChipAcousticPoller(
+                **common,
+                broker_host=self.mqtt_broker_host,
+                broker_port=self.mqtt_broker_port,
+                pool=self.pool,
+            ))
+            logger.info("MXChipAcousticPoller enabled")
         return pollers
 
     async def _heartbeat_loop(self) -> None:
@@ -1160,6 +1405,7 @@ async def main() -> None:
     MQTT_BROKER_HOST   = os.environ.get("MQTT_BROKER_HOST", "localhost")
     MQTT_BROKER_PORT   = int(os.environ.get("MQTT_BROKER_PORT", "1883"))
     KANBAN_BOARD_ID    = os.environ.get("KANBAN_BOARD_ID")
+    ENABLE_MXCHIP      = os.environ.get("ENABLE_MXCHIP", "false").lower() == "true"
 
     pool = await asyncpg.create_pool(DB_URL, min_size=2, max_size=10)
 
@@ -1182,6 +1428,7 @@ async def main() -> None:
         thermal_node_name=THERMAL_NODE,
         mqtt_broker_host=MQTT_BROKER_HOST,
         mqtt_broker_port=MQTT_BROKER_PORT,
+        enable_mxchip=ENABLE_MXCHIP,
     )
 
     await coordinator.start()

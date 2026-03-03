@@ -22,7 +22,7 @@
 // waits at most WIFI_CONNECT_TIMEOUT_MS before giving up and proceeding in
 // serial-only mode.
 // ---------------------------------------------------------------------------
-static rtos::Semaphore g_wifiSem(0, 1);
+static rtos::Semaphore g_wifiSem(0);
 static bool            g_wifiOk = false;
 
 static void wifiConnectTask() {

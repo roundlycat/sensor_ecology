@@ -59,6 +59,10 @@
 // ============================================================
 // Network / MQTT
 // ============================================================
+// WiFi connection timeout in begin(); prevents hanging at boot.
+#define WIFI_CONNECT_TIMEOUT_MS   15000UL
+// Minimum interval between WiFi reconnect attempts in publishJson().
+#define WIFI_RETRY_INTERVAL_MS    (5UL * 60UL * 1000UL)  // 5 minutes
 #ifndef MQTT_BROKER_IP
 #define MQTT_BROKER_IP    "192.168.0.25"
 #endif

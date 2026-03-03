@@ -47,6 +47,7 @@ private:
     bool     _mqttReady;
     uint32_t _lastPublishMs;
     uint32_t _publishInterval;
+    uint32_t _wifiLastAttemptMs;  // backoff: don't retry WiFi more often than WIFI_RETRY_INTERVAL_MS
 
     // Reconnect logic (non-blocking — returns false without blocking if down).
     bool ensureMqtt();

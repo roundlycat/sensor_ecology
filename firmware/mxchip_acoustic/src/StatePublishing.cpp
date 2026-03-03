@@ -14,9 +14,50 @@
 #include "MQTTmbed.h"      // Countdown (mbed Timer wrapper)
 #include "MQTTClient.h"    // Paho embedded MQTT client template
 #include "SystemWiFi.h"    // InitSystemWiFi(), SystemWiFiConnect()
+#include "rtos.h"          // mbed RTOS Thread + Semaphore for WiFi timeout
+
+// ---------------------------------------------------------------------------
+// WiFi connection runs in a background thread so the main loop is not blocked
+// if the AP is absent or slow.  A Semaphore signals completion; the caller
+// waits at most WIFI_CONNECT_TIMEOUT_MS before giving up and proceeding in
+// serial-only mode.
+// ---------------------------------------------------------------------------
+static rtos::Semaphore g_wifiSem(0, 1);
+static bool            g_wifiOk = false;
+
+static void wifiConnectTask() {
+    g_wifiOk = SystemWiFiConnect();
+    g_wifiSem.release();
+}
 
 static MQTTNetwork g_net;
 static MQTT::Client<MQTTNetwork, Countdown, 256, 2> g_mqtt(g_net);
+
+// ---------------------------------------------------------------------------
+// ensureWifi() — attempt WiFi connect with a hard timeout.
+// Runs SystemWiFiConnect() in a background thread; the calling thread waits
+// at most WIFI_CONNECT_TIMEOUT_MS.  Returns true if connected.
+// On timeout the driver thread is terminated; the EMW10xx module will be in
+// an unknown state, but since we run serial-only after this the radio is
+// not used until the next retry interval.
+// ---------------------------------------------------------------------------
+static bool ensureWifi() {
+    // Drain any leftover token from a prior release before this wait.
+    while (g_wifiSem.wait(0) > 0) {}
+    g_wifiOk = false;
+
+    rtos::Thread wifiThread(osPriorityNormal, 8192);
+    wifiThread.start(wifiConnectTask);
+
+    int32_t got = g_wifiSem.wait(WIFI_CONNECT_TIMEOUT_MS);
+    if (got <= 0) {
+        Serial.println("[net] WiFi timeout — serial-only mode");
+        wifiThread.terminate();
+        return false;
+    }
+    wifiThread.join();
+    return g_wifiOk;
+}
 
 // ---------------------------------------------------------------------------
 static const char* mgsLabel(MotifGrowthState s) {
@@ -33,7 +74,8 @@ static const char* mgsLabel(MotifGrowthState s) {
 StatePublishingModule::StatePublishingModule()
     : _mqttReady(false),
       _lastPublishMs(0),
-      _publishInterval(PUBLISH_FAST_MS)
+      _publishInterval(PUBLISH_FAST_MS),
+      _wifiLastAttemptMs(0)
 {}
 
 // ---------------------------------------------------------------------------
@@ -41,8 +83,8 @@ bool StatePublishingModule::ensureMqtt() {
     // --- WiFi ---
     // SystemWiFiConnect() uses SSID/password from STSAFE (provisioned by
     // the IoT DevKit companion app or programmatically via EEPROMInterface).
-    if (!SystemWiFiConnect()) {
-        Serial.println("[net] WiFi connect failed");
+    // We run it in a background thread so a missing/slow AP never hangs setup().
+    if (!ensureWifi()) {
         return false;
     }
     Serial.printf("[net] WiFi connected: %s\n", SystemWiFiSSID());
@@ -72,6 +114,7 @@ bool StatePublishingModule::ensureMqtt() {
 }
 
 void StatePublishingModule::begin() {
+    _wifiLastAttemptMs = millis();
     _mqttReady = ensureMqtt();
     if (!_mqttReady) {
         Serial.println("[net] running in serial-only mode");
@@ -84,6 +127,14 @@ void StatePublishingModule::publishJson(const char* topic, const char* json) {
     Serial.printf("[%s] %s\n", topic, json);
 
     if (!_mqttReady) {
+        // Rate-limit reconnect attempts so the WiFi thread is not spawned on
+        // every publish tick.  _wifiLastAttemptMs is set by begin() and here.
+        uint32_t nowMs = millis();
+        if (_wifiLastAttemptMs != 0 &&
+            (nowMs - _wifiLastAttemptMs) < WIFI_RETRY_INTERVAL_MS) {
+            return;  // too soon — stay in serial-only mode
+        }
+        _wifiLastAttemptMs = nowMs;
         _mqttReady = ensureMqtt();
         if (!_mqttReady) return;
     }

@@ -120,7 +120,7 @@ def _fmt_corpus(echoes: list[dict]) -> str:
         text = (e.get("chunk_text") or "").strip().replace("\n", " ")
         if len(text) > 200:
             text = text[:197] + "…"
-        lines.append(f"  [{src} · sim {sim:.2f}] "{text}"")
+        lines.append(f'  [{src} \u00b7 sim {sim:.2f}] "{text}"')
     return "\n" + "\n".join(lines) + "\n"
 
 

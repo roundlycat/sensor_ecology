@@ -40,8 +40,10 @@ MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
 DB_DSN    = os.environ.get("DB_DSN", "postgresql://sean:ecology@localhost/sensor_ecology")
 
 TOPICS = [
-    ("agents/registration",     0),
+    ("agents/registration",     0),   # env-node-01 style (no node id in path)
+    ("agents/+/registration",   0),   # nodemcu/bme280 style (node id in path)
     ("agents/+/interpretation", 0),
+    ("agents/+/observation",    0),   # bme280_node legacy observation format
     ("agents/+/status",         0),
 ]
 
@@ -49,6 +51,13 @@ TOPICS = [
 DOMAIN_MAP = {
     "tcs34725": "environmental_field",
     "mpu6050":  "embodied_state",
+}
+
+# observation_type → perceptual domain for legacy observation messages
+OBS_DOMAIN_MAP = {
+    "bme280_node":      "environmental_field",
+    "envirophat_node":  "environmental_field",
+    "esp32_node":       "environmental_field",
 }
 
 
@@ -197,6 +206,38 @@ async def handle_interpretation(pool: asyncpg.Pool, agent_id: str, payload: dict
         mqtt_publish(f"unity/nodes/{unity['id']}/state", json.dumps(unity))
 
 
+async def handle_observation(pool: asyncpg.Pool, agent_id: str, payload: dict):
+    """Handle legacy agents/+/observation messages (e.g. BME280 NodeMCU)."""
+    obs_type   = payload.get("observation_type", "unknown")
+    summary    = payload.get("semantic_summary", obs_type)
+    confidence = float(payload.get("confidence", 0.5))
+    raw_data   = payload.get("raw_data", {})
+
+    # Look up node; get its type for domain mapping (registration arrives first
+    # as a retained message, so node_type should already be populated).
+    row = await pool.fetchrow(
+        "SELECT id::text, node_type FROM agent_nodes WHERE node_name = $1", agent_id
+    )
+    if row:
+        node_id    = row["id"]
+        node_type  = row["node_type"] or ""
+    else:
+        node_type  = "sensor_node"
+        node_id    = await upsert_node(pool, agent_id, node_type, "", {})
+
+    domain = OBS_DOMAIN_MAP.get(node_type, "environmental_field")
+
+    await insert_event(
+        pool,
+        node_id=node_id,
+        domain=domain,
+        label=obs_type,
+        confidence=conf_level(confidence),
+        feature_snapshot={"summary": summary, **raw_data},
+    )
+    log.info("Obs    %s → %s (%.0f%%)", agent_id, obs_type, confidence * 100)
+
+
 async def handle_status(pool: asyncpg.Pool, agent_id: str, payload: dict):
     heartbeat = {
         "rssi_dbm":    payload.get("rssi_dbm"),
@@ -228,9 +269,13 @@ async def process_messages(pool: asyncpg.Pool, queue: asyncio.Queue,
         try:
             if topic == "agents/registration":
                 await handle_registration(pool, payload)
+            elif len(parts) == 3 and parts[2] == "registration":
+                await handle_registration(pool, payload)
             elif len(parts) == 3 and parts[2] == "interpretation":
                 await handle_interpretation(pool, parts[1], payload,
                                             mqtt_publish=mqtt_publish)
+            elif len(parts) == 3 and parts[2] == "observation":
+                await handle_observation(pool, parts[1], payload)
             elif len(parts) == 3 and parts[2] == "status":
                 await handle_status(pool, parts[1], payload)
         except Exception:

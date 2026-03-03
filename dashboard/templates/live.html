@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% block title %}Live Feed{% endblock %}
+
+{% block content %}
+<h1 class="page-title">
+  Live Feed
+  <span class="status-dot" id="live-dot"
+        style="margin-left:0.6rem;vertical-align:middle;display:none"></span>
+</h1>
+
+<div style="display:flex;gap:0.75rem;align-items:center;margin-bottom:1.25rem">
+  <button onclick="startFeed()">Connect</button>
+  <button class="secondary" onclick="stopFeed()">Pause</button>
+  <button class="secondary" onclick="clearFeed()">Clear</button>
+  <span class="muted small" id="feed-status">Not connected</span>
+  <span class="muted small" id="feed-count"></span>
+</div>
+
+<div class="feed" id="feed"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let evtSource = null;
+let itemCount = 0;
+const MAX_ITEMS = 100;
+
+function startFeed() {
+  if (evtSource) stopFeed();
+
+  evtSource = new EventSource('/live/feed');
+  document.getElementById('feed-status').textContent = 'Connecting…';
+  document.getElementById('live-dot').style.display = 'inline-block';
+
+  evtSource.onopen = () => {
+    document.getElementById('feed-status').textContent = 'Connected — polling every 3s';
+  };
+
+  evtSource.onmessage = (e) => {
+    const items = JSON.parse(e.data);
+    if (!items.length) return;
+
+    const feed = document.getElementById('feed');
+    items.forEach(obs => {
+      const el = document.createElement('div');
+      el.className = 'feed-item';
+      el.innerHTML = `
+        <div class="meta">
+          <span class="muted small">${UI.formatTime(obs.observed_at)}</span>
+          <span class="badge">${obs.agent_name}</span>
+          ${UI.typeBadge(obs.observation_type)}
+          <span class="muted small">${UI.confBar(obs.confidence)}</span>
+        </div>
+        <div class="summary">${obs.semantic_summary}</div>
+      `;
+      feed.insertBefore(el, feed.firstChild);
+      itemCount++;
+    });
+
+    // Trim overflow
+    while (feed.children.length > MAX_ITEMS) {
+      feed.removeChild(feed.lastChild);
+    }
+    document.getElementById('feed-count').textContent =
+      `${Math.min(itemCount, MAX_ITEMS)} shown`;
+  };
+
+  evtSource.onerror = () => {
+    document.getElementById('feed-status').textContent = 'Reconnecting…';
+  };
+}
+
+function stopFeed() {
+  if (evtSource) {
+    evtSource.close();
+    evtSource = null;
+    document.getElementById('feed-status').textContent = 'Paused';
+    document.getElementById('live-dot').style.display = 'none';
+  }
+}
+
+function clearFeed() {
+  document.getElementById('feed').innerHTML = '';
+  itemCount = 0;
+  document.getElementById('feed-count').textContent = '';
+}
+
+// Auto-connect on page load
+startFeed();
+</script>
+{% endblock %}

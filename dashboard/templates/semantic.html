@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Semantic Search{% endblock %}
+
+{% block content %}
+<h1 class="page-title">Semantic Search</h1>
+
+<div class="search-box">
+  <textarea id="query-input"
+    placeholder="Describe what you're looking for — e.g. 'temperature rising after fan stopped' or 'motion near entrance at night' or 'unusual pressure reading'"
+  ></textarea>
+  <div class="search-controls">
+    <label style="flex-direction:row;align-items:center;gap:0.5rem">
+      Threshold:
+      <input type="range" id="threshold" min="0.5" max="1.0" step="0.05" value="0.7"
+             style="width:120px"
+             oninput="document.getElementById('threshold-val').textContent = parseFloat(this.value).toFixed(2)" />
+      <span id="threshold-val" class="muted">0.70</span>
+    </label>
+    <label style="flex-direction:row;align-items:center;gap:0.5rem">
+      Limit:
+      <select id="search-limit">
+        <option value="10" selected>10</option>
+        <option value="20">20</option>
+        <option value="50">50</option>
+      </select>
+    </label>
+    <button onclick="runSearch()">Search</button>
+  </div>
+</div>
+
+<div id="search-results"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function runSearch() {
+  const query = document.getElementById('query-input').value.trim();
+  const el    = document.getElementById('search-results');
+
+  if (!query) {
+    UI.empty(el, 'Enter a query above.');
+    return;
+  }
+
+  UI.loading(el);
+
+  try {
+    const results = await apiFetch('/api/semantic/search', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query,
+        threshold: parseFloat(document.getElementById('threshold').value),
+        limit:     parseInt(document.getElementById('search-limit').value),
+      }),
+    });
+
+    if (!results.length) {
+      UI.empty(el, 'No similar observations found. Try lowering the threshold.');
+      return;
+    }
+
+    el.innerHTML = `
+      <p class="muted small" style="margin-bottom:0.75rem">
+        ${results.length} result(s) for: <em>"${query}"</em>
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Similarity</th>
+              <th>Time</th>
+              <th>Agent</th>
+              <th>Type</th>
+              <th>Summary</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${results.map(r => `
+              <tr>
+                <td><span class="sim-score">${(r.similarity * 100).toFixed(1)}%</span></td>
+                <td class="muted small" style="white-space:nowrap">
+                  ${UI.formatTime(r.observed_at)}
+                </td>
+                <td><span class="badge">${r.agent_name}</span></td>
+                <td>${UI.typeBadge(r.observation_type)}</td>
+                <td>${r.semantic_summary}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  } catch (e) {
+    UI.error(el, e.message);
+  }
+}
+
+// Shift+Enter = newline, plain Enter = submit
+document.getElementById('query-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    runSearch();
+  }
+});
+</script>
+{% endblock %}

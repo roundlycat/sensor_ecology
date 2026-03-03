@@ -484,23 +484,32 @@ void setup() {
 
   Wire.begin(PIN_SDA, PIN_SCL);
   Wire.setClock(400000);
+  delay(50);  // allow I2C bus to settle before probing sensors
 
-  if (tcs.begin(TCS34725_ADDRESS, &Wire)) {
-    tcsOk = true;
-    Serial.println("[BOOT] TCS34725 OK");
-  } else {
-    Serial.println("[BOOT] TCS34725 NOT FOUND — light disabled");
+  for (int attempt = 1; attempt <= 3 && !tcsOk; attempt++) {
+    if (tcs.begin(TCS34725_ADDRESS, &Wire)) {
+      tcsOk = true;
+      Serial.println("[BOOT] TCS34725 OK");
+    } else {
+      Serial.printf("[BOOT] TCS34725 attempt %d/3 failed\n", attempt);
+      delay(50);
+    }
   }
+  if (!tcsOk) Serial.println("[BOOT] TCS34725 NOT FOUND — light disabled");
 
-  if (mpu.begin(MPU6050_I2CADDR_DEFAULT, &Wire)) {
-    mpuOk = true;
-    mpu.setAccelerometerRange(MPU6050_RANGE_2_G);
-    mpu.setGyroRange(MPU6050_RANGE_250_DEG);
-    mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
-    Serial.println("[BOOT] MPU-6050 OK");
-  } else {
-    Serial.println("[BOOT] MPU-6050 NOT FOUND — motion disabled");
+  for (int attempt = 1; attempt <= 3 && !mpuOk; attempt++) {
+    if (mpu.begin(MPU6050_I2CADDR_DEFAULT, &Wire)) {
+      mpuOk = true;
+      mpu.setAccelerometerRange(MPU6050_RANGE_2_G);
+      mpu.setGyroRange(MPU6050_RANGE_250_DEG);
+      mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+      Serial.println("[BOOT] MPU-6050 OK");
+    } else {
+      Serial.printf("[BOOT] MPU-6050 attempt %d/3 failed\n", attempt);
+      delay(50);
+    }
   }
+  if (!mpuOk) Serial.println("[BOOT] MPU-6050 NOT FOUND — motion disabled");
 
   mqtt.setServer(MQTT_HOST, MQTT_PORT);
   mqtt.setKeepAlive(20);

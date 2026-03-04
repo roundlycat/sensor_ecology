@@ -2,10 +2,11 @@
     "name": "AgentPerception",
     "rootNamespace": "AgentPerception",
     "references": [
-        "GUID:27619889b8ba8c24980f49ee34dbb44a",
-        "GUID:f51ebe6a0ceec4240a699833d6309b23",
-        "GUID:2bafac87e7f4b9b418d9448d219b01ab",
-        "GUID:d8b63aba1907145bea998dd612889d6b"
+        "Unity.TextMeshPro",
+        "Unity.InputSystem",
+        "Unity.XR.ARFoundation",
+        "Unity.XR.ARSubsystems",
+        "Unity.XR.ARCore"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

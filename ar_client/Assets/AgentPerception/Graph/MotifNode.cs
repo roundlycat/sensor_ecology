@@ -84,7 +84,6 @@ namespace AgentPerception
         [SerializeField] GameObject             _ringSegmentPrefab;  // thin arc segment
 
         [Header("Interaction")]
-        [SerializeField] float                  _tapRadius      = 0.06f;
         [SerializeField] float                  _hoverScale     = 1.15f;
         [SerializeField] float                  _selectedScale  = 1.30f;
         [SerializeField] AudioSource            _tapSound;
@@ -105,7 +104,6 @@ namespace AgentPerception
         PerceptualEventBus      _bus;
         Vector3                 _baseScale;
         Coroutine               _pulseCoroutine;
-        bool                    _isHovered;
         List<Renderer>          _ringSegments = new();
 
         // Domain → colour mapping (mirrors PerceptualEventBus palette)
@@ -353,14 +351,12 @@ namespace AgentPerception
         public void OnHoverEnter()
         {
             if (IsSelected) return;
-            _isHovered = true;
             StartCoroutine(ScaleTo(_baseScale * _hoverScale, 0.1f));
         }
 
         public void OnHoverExit()
         {
             if (IsSelected) return;
-            _isHovered = false;
             StartCoroutine(ScaleTo(_baseScale, 0.1f));
         }
 

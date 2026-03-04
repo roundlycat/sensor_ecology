@@ -31,7 +31,6 @@ namespace AgentPerception
         [SerializeField] int     _pollBatchSize = 50;               // events per request
 
         [Header("Resilience")]
-        [SerializeField] int   _maxRetries     = 5;
         [SerializeField] float _baseBackoffS   = 1.0f;
         [SerializeField] float _maxBackoffS    = 30.0f;
         [SerializeField] float _timeoutS       = 10.0f;

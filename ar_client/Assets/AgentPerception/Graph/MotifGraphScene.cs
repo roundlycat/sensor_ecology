@@ -343,7 +343,7 @@ namespace AgentPerception
 #endif
             // First try AR raycast against physical planes
             if (_arRaycastManager != null
-                && _arRaycastManager.Raycast(screenPos, _hits, TrackableType.All))
+                && _arRaycastManager.Raycast(screenPos, _hits, TrackableType.AllTypes))
             {
                 // AR hit found — not a node tap (graph interaction handled below)
             }

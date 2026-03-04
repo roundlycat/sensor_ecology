@@ -200,4 +200,27 @@ namespace AgentPerception
         public string          DisplayLabel;
         public bool            HasMotifResonance => Source.NearestResonance != null;
     }
+
+    // -----------------------------------------------------------------------
+    // Motif structural data & Drift
+    // -----------------------------------------------------------------------
+
+
+    [Serializable]
+    public class MotifDriftLog
+    {
+        public string id;
+        public string motif_id;
+        public string centroid_before; // vector as string or parsed later
+        public string centroid_after;
+        public string trigger_event_id;
+        public int    n_events_included;
+        public string computed_at;
+    }
+
+    [Serializable]
+    public class MotifDriftResponse
+    {
+        public MotifDriftLog[] drifts;
+    }
 }

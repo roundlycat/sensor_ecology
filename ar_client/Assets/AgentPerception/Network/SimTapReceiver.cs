@@ -52,16 +52,18 @@ namespace AgentPerception
             while (true)
             {
                 var url = $"http://{_relayHost}:{_relayPort}/api/sim/poll";
-                using var req = UnityWebRequest.Get(url);
-                req.timeout = 20; // 20s long-poll timeout
-                yield return req.SendWebRequest();
-
-                if (req.result == UnityWebRequest.Result.Success)
+                using (var req = UnityWebRequest.Get(url))
                 {
-                    var response = JsonUtility.FromJson<SimTapEvent>(req.downloadHandler.text);
-                    if (response != null && response.type == "tap" && !string.IsNullOrEmpty(response.motif_id))
+                    req.timeout = 20; // 20s long-poll timeout
+                    yield return req.SendWebRequest();
+
+                    if (req.result == UnityWebRequest.Result.Success)
                     {
-                        SimulateTap(response.motif_id);
+                        var response = JsonUtility.FromJson<SimTapEvent>(req.downloadHandler.text);
+                        if (response != null && response.type == "tap" && !string.IsNullOrEmpty(response.motif_id))
+                        {
+                            SimulateTap(response.motif_id);
+                        }
                     }
                 }
                 

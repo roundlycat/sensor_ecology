@@ -44,22 +44,25 @@ namespace AgentPerception
                 // Note: The /api/motifs/drift endpoint needs to be implemented in relay_api.py
                 // to return the perceptual_motif_drift records.
                 var url = $"http://{_relayHost}:{_relayPort}/api/motifs/drift?limit=100";
-                using var req = UnityWebRequest.Get(url);
-                yield return req.SendWebRequest();
-
-                if (req.result == UnityWebRequest.Result.Success)
+                
+                using (var req = UnityWebRequest.Get(url))
                 {
-                    try
+                    yield return req.SendWebRequest();
+
+                    if (req.result == UnityWebRequest.Result.Success)
                     {
-                        var response = JsonUtility.FromJson<MotifDriftResponse>(req.downloadHandler.text);
-                        if (response?.drifts != null)
+                        try
                         {
-                            UpdateDriftTrails(response.drifts);
+                            var response = JsonUtility.FromJson<MotifDriftResponse>(req.downloadHandler.text);
+                            if (response?.drifts != null)
+                            {
+                                UpdateDriftTrails(response.drifts);
+                            }
                         }
-                    }
-                    catch (System.Exception e)
-                    {
-                        Debug.LogWarning($"[MotifDriftVisualizer] Failed to parse drift data: {e.Message}");
+                        catch (System.Exception e)
+                        {
+                            Debug.LogWarning($"[MotifDriftVisualizer] Failed to parse drift data: {e.Message}");
+                        }
                     }
                 }
 

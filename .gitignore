@@ -5,3 +5,75 @@ __pycache__/
 *.db
 *.swp
 .*.swp
+# --- Core Unity ignores ---
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+UserSettings/
+MemoryCaptures/
+
+# --- Unity cache and build artifacts ---
+[Bb]urstCache/
+[Bb]ee/
+[Bb]uildInstructions/
+[Bb]uildProfiles/
+[Bb]uildReport/
+[Bb]uildCache/
+[Bb]uildArtifacts/
+
+# --- Unity Asset Store tools ---
+Assets/AssetStoreTools*
+
+# --- Unity Collaborate ---
+.collabignore
+
+# --- IDE / Editor ---
+.vs/
+.vscode/
+*.csproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+
+# --- OS files ---
+.DS_Store
+Thumbs.db
+
+# --- Rider ---
+.idea/
+*.unityproj
+
+# --- Package Manager ---
+Packages/packages-lock.json
+
+# --- Nested sensor_ecology project ---
+sensor_ecology/[Ll]ibrary/
+sensor_ecology/[Tt]emp/
+sensor_ecology/[Oo]bj/
+sensor_ecology/[Bb]uild/
+sensor_ecology/[Bb]uilds/
+sensor_ecology/[Ll]ogs/
+
+# --- Build outputs ---
+*.apk
+*.aab
+*.xcodeproj
+*.xcworkspace
+*.ipa
+
+# --- Crash reports ---
+sysinfo.txt
+
+# --- Unity generated meta files to keep ---
+!*.meta
+
+# --- Keep your actual project assets ---
+!Assets/**

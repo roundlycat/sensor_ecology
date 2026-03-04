@@ -1,0 +1,25 @@
+{
+    "name": "AgentPerception",
+    "rootNamespace": "AgentPerception",
+    "references": [
+        "GUID:27619889b8ba8c24980f49ee34dbb44a",
+        "GUID:f51ebe6a0ceec4240a699833d6309b23",
+        "GUID:2bafac87e7f4b9b418d9448d219b01ab",
+        "GUID:d8b63aba1907145bea998dd612889d6b"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [
+        {
+            "name": "com.unity.xr.arfoundation",
+            "expression": "5.1.0",
+            "define": "AR_FOUNDATION_5_1"
+        }
+    ],
+    "noEngineReferences": false
+}

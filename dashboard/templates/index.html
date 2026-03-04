@@ -623,6 +623,16 @@
         }).join('');
       } catch (e) { echoList.innerHTML = `<div class="empty-state">⚠ ${e.message}</div>`; }
       burstResonance(id);
+
+      // Trigger AR Simulation: when a motif is selected on the Pi5 touchscreen,
+      // notify the relay API so the AR client (SimTapReceiver) simulates a 3D node tap.
+      try {
+        await fetch(`http://${window.location.hostname}:8765/api/sim/tap`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ motif_id: id })
+        });
+      } catch (e) { console.warn('AR sim tap failed:', e.message); }
     }
 
     function startResonanceCanvas() {

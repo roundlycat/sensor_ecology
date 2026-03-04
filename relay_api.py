@@ -82,6 +82,16 @@ class FeatureSnapshotOut(BaseModel):
         )
 
 
+class SimTapEventIn(BaseModel):
+    motif_id: str
+
+
+# ---------------------------------------------------------------------------
+# Global simulation queue for touchscreen taps -> AR Tab relay
+# ---------------------------------------------------------------------------
+sim_event_queue: asyncio.Queue = asyncio.Queue()
+
+
 class MotifResonanceOut(BaseModel):
     id:                      str
     perceptual_event_id:     str
@@ -392,8 +402,57 @@ async def get_perceptual_echoes(
 
 
 # ---------------------------------------------------------------------------
-# Motif list — used by MotifGraphScene to build the AR node graph
+# Simulation Extensibility
 # ---------------------------------------------------------------------------
+
+@app.post("/api/sim/tap")
+async def sim_tap(payload: SimTapEventIn):
+    """Touchscreen simulation tap endpoint. Relays to Unity client."""
+    await sim_event_queue.put({"type": "tap", "motif_id": payload.motif_id})
+    return {"ok": True}
+
+@app.get("/api/sim/poll")
+async def sim_poll():
+    """Unity Simulation Receiver long-polls this waiting for taps."""
+    try:
+        # Wait until an event occurs or 20s times out.
+        # This keeps the connection open using HTTP long-polling
+        event = await asyncio.wait_for(sim_event_queue.get(), timeout=20.0)
+        return event
+    except asyncio.TimeoutError:
+        return {"type": "ping", "motif_id": ""}
+
+
+# ---------------------------------------------------------------------------
+# Motif list & Semantic Drift
+# ---------------------------------------------------------------------------
+
+@app.get("/api/motifs/drift")
+async def get_motif_drift(limit: int = Query(200, le=1000)):
+    """Fetch the chronological trace of semantic drift for motives."""
+    rows = await pool.fetch(
+        """
+        SELECT 
+            id, motif_id, 
+            trigger_event_id, n_events_included, computed_at
+        FROM perceptual_motif_drift
+        ORDER BY computed_at ASC
+        LIMIT $1
+        """,
+        limit
+    )
+    return {
+        "drifts": [
+            {
+                "id": str(r["id"]),
+                "motif_id": str(r["motif_id"]),
+                "trigger_event_id": str(r["trigger_event_id"]) if r["trigger_event_id"] else None,
+                "n_events_included": r["n_events_included"],
+                "computed_at": _fmt_dt(r["computed_at"]),
+            }
+            for r in rows
+        ]
+    }
 
 class MotifOut(BaseModel):
     id:                  str

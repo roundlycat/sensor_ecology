@@ -200,47 +200,4 @@ namespace AgentPerception
         public string          DisplayLabel;
         public bool            HasMotifResonance => Source.NearestResonance != null;
     }
-
-    // -----------------------------------------------------------------------
-    // Motif structural data & Drift
-    // -----------------------------------------------------------------------
-
-    [Serializable]
-    public class PerceptualMotif
-    {
-        public string id;
-        public string label;
-        public int    recurrence_count;
-        public string last_resonance_at;
-        public string dominant_domain;
-        public bool   has_embedding;
-        
-        // These can be populated optionally if drift records are fetched
-        [NonSerialized] public List<MotifDriftLog> DriftPath = new();
-    }
-
-    [Serializable]
-    public class MotifListResponse
-    {
-        public PerceptualMotif[] motifs;
-        public int               total;
-    }
-
-    [Serializable]
-    public class MotifDriftLog
-    {
-        public string id;
-        public string motif_id;
-        public string centroid_before; // vector as string or parsed later
-        public string centroid_after;
-        public string trigger_event_id;
-        public int    n_events_included;
-        public string computed_at;
-    }
-
-    [Serializable]
-    public class MotifDriftResponse
-    {
-        public MotifDriftLog[] drifts;
-    }
 }

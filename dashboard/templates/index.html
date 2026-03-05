@@ -31,19 +31,23 @@
       </div>
 
       <div id="vitals">
-        <div class="vital">
+        <div class="vital" title="Pi5 CPU load">
           <span class="vital-label">CPU</span>
           <span class="vital-val" id="v-cpu">—</span>
         </div>
-        <div class="vital">
+        <div class="vital" title="Pi5 CPU temperature">
           <span class="vital-label">Temp</span>
           <span class="vital-val" id="v-temp">—</span>
         </div>
-        <div class="vital">
+        <div class="vital" title="Pi5 power draw">
           <span class="vital-label">Power</span>
           <span class="vital-val" id="v-power">—</span>
         </div>
         <div style="width:1px;height:20px;background:var(--border);margin:0 4px"></div>
+        <div class="vital">
+          <span class="vital-label">Nodes</span>
+          <span class="vital-val" id="v-nodes">—</span>
+        </div>
         <div class="vital">
           <span class="vital-label">Events/hr</span>
           <span class="vital-val" id="v-rate">—</span>
@@ -92,6 +96,11 @@
             letter-spacing:0.08em;opacity:0;transition:opacity 0.5s;
           "></div>
           </div>
+
+          <div id="field-nodes" style="
+            display:flex;flex-wrap:wrap;gap:5px;justify-content:center;
+            padding:0 12px 10px;
+          "></div>
 
           <div id="field-bottom">
             <div class="field-stat">
@@ -330,6 +339,11 @@
         document.getElementById('fs-last-hour').textContent = (state.totals.last_hour ?? '—') + ' last hour';
         document.getElementById('fs-5min').textContent = state.totals.last_5min ?? '—';
       }
+      if (state.active_nodes) {
+        const activeCount = state.active_nodes.filter(n => n.event_count_1h > 0).length;
+        document.getElementById('v-nodes').textContent =
+          activeCount + '/' + state.active_nodes.length;
+      }
       const lr = state.latest_resonance;
       if (lr) {
         document.getElementById('fs-motif').textContent = lr.label ? lr.label.slice(0, 40) : '—';
@@ -340,10 +354,13 @@
       legend.innerHTML = Object.entries(DOMAINS).map(([key, meta]) => {
         const latest = state.domain_latest.find(x => x.domain === key);
         const hidden = hiddenDomains.has(key);
+        const nodeName = latest?.node_name || '';
+        const shortNode = nodeName.length > 12 ? nodeName.slice(0, 11) + '…' : nodeName;
         return `<div class="domain-chip ${hidden ? 'dim' : ''}" style="border-color:${meta.color}22"
          id="chip-domain-${key}" onclick="toggleDomain('${key}')">
       <div class="dot" style="background:${meta.color}${latest ? 'ff' : '44'}"></div>
       <span style="color:${latest ? 'var(--text)' : 'var(--text-dim)'}">${key}</span>
+      ${latest ? `<span class="count" style="color:var(--text-dim);font-size:8px;margin-right:2px" title="${nodeName}">${shortNode}</span>` : ''}
       ${latest ? `<span class="count">${fmtAge(latest.event_start)}</span>` : ''}
     </div>`;
       }).join('');
@@ -354,11 +371,33 @@
         const summaryEl = document.getElementById('field-summary');
         summaryEl.textContent = top.event_label?.replace(/_/g, ' ') || '';
         summaryEl.classList.add('visible');
+        const nodePart = top.node_name ? ' · ' + top.node_name : '';
         document.getElementById('field-agent').textContent =
-          (top.domain?.toUpperCase() || '') + '·' + fmtAge(top.event_start);
+          (top.domain?.toUpperCase() || '') + nodePart + ' · ' + fmtAge(top.event_start);
         const motifEl = document.getElementById('field-motif');
         motifEl.textContent = lr?.label || '';
         motifEl.classList.toggle('visible', !!lr?.label);
+      }
+
+      // Active nodes strip
+      const nodesEl = document.getElementById('field-nodes');
+      if (nodesEl && state.active_nodes?.length) {
+        nodesEl.innerHTML = state.active_nodes.map(n => {
+          const age = fmtAge(n.last_event);
+          const hot = n.event_count_1h > 0;
+          const domColor = domainColor(n.primary_domain);
+          return `<span style="
+            display:inline-flex;align-items:center;gap:4px;
+            padding:2px 7px;border-radius:3px;
+            border:1px solid ${domColor}${hot ? '55' : '22'};
+            color:${hot ? 'var(--text)' : 'var(--text-dim)'};
+            font-size:9px;letter-spacing:0.04em;white-space:nowrap
+          " title="${n.event_count_24h} events today · ${n.event_count_1h} last hour">
+            <span style="width:5px;height:5px;border-radius:50%;background:${domColor}${hot ? 'ff' : '55'};flex-shrink:0"></span>
+            ${n.node_name}
+            <span style="color:var(--text-dim)">${age}</span>
+          </span>`;
+        }).join('');
       }
       document.getElementById('pulse-dot').classList.toggle('dim',
         !state.domain_latest.some(x => new Date(x.event_start) > Date.now() - 300_000));

@@ -757,6 +757,9 @@ class HighBandwidthPoller(SensorPoller):
         client.on_message    = self._on_mqtt_message
         client.on_disconnect = self._on_mqtt_disconnect
         self._mqtt_client = client
+        _mqtt_user = os.environ.get("MQTT_USER", "")
+        if _mqtt_user:
+            client.username_pw_set(_mqtt_user, os.environ.get("MQTT_PASS", ""))
         try:
             client.connect(self._broker_host, self._broker_port, keepalive=60)
             client.loop_start()
@@ -1000,6 +1003,9 @@ class MXChipAcousticPoller(SensorPoller):
         client.on_message    = self._on_mqtt_message
         client.on_disconnect = self._on_mqtt_disconnect
         self._mqtt_client = client
+        _mqtt_user = os.environ.get("MQTT_USER", "")
+        if _mqtt_user:
+            client.username_pw_set(_mqtt_user, os.environ.get("MQTT_PASS", ""))
         try:
             client.connect(self._broker_host, self._broker_port, keepalive=60)
             client.loop_start()

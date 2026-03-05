@@ -23,6 +23,8 @@ log = logging.getLogger(__name__)
 
 MQTT_BROKER_HOST = os.environ.get("MQTT_BROKER_HOST", "localhost")
 MQTT_BROKER_PORT = int(os.environ.get("MQTT_BROKER_PORT", 1883))
+MQTT_USER        = os.environ.get("MQTT_USER", "")
+MQTT_PASS        = os.environ.get("MQTT_PASS", "")
 THERMAL_NODE_NAME = os.environ.get("THERMAL_NODE_NAME", "pi5-thermal")
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://sean@localhost/sensor_ecology")
 KANBAN_BOARD_ID = os.environ.get("KANBAN_BOARD_ID")  # UUID of your board
@@ -206,6 +208,8 @@ async def main():
     client = mqtt.Client()
     client.on_connect = on_connect
     client.on_message = on_message
+    if MQTT_USER:
+        client.username_pw_set(MQTT_USER, MQTT_PASS)
     client.connect(MQTT_BROKER_HOST, MQTT_BROKER_PORT)
     client.loop_start()
 

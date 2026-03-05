@@ -37,6 +37,8 @@ log = logging.getLogger("esp32-bridge")
 
 MQTT_HOST = os.environ.get("MQTT_HOST", "localhost")
 MQTT_PORT = int(os.environ.get("MQTT_PORT", "1883"))
+MQTT_USER = os.environ.get("MQTT_USER", "")
+MQTT_PASS = os.environ.get("MQTT_PASS", "")
 DB_DSN    = os.environ.get("DB_DSN", "postgresql://sean:ecology@localhost/sensor_ecology")
 
 TOPICS = [
@@ -306,6 +308,8 @@ async def main():
     client = mqtt.Client()
     client.on_connect = on_connect
     client.on_message = on_message
+    if MQTT_USER:
+        client.username_pw_set(MQTT_USER, MQTT_PASS)
     client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
     client.loop_start()
 

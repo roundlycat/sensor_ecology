@@ -196,19 +196,21 @@ async def get_ecology_state() -> dict:
     """
     pool = get_pool()
     async with pool.acquire() as conn:
-        # Latest event per domain
+        # Latest event per domain, with contributing node name
         domain_latest = await conn.fetch("""
-            SELECT DISTINCT ON (domain)
-                domain::text,
-                event_label,
-                confidence::text,
-                event_start,
-                agent_temp_c,
-                agent_power_mw,
-                agent_cpu_load_pct,
-                feature_snapshot
-            FROM perceptual_events
-            ORDER BY domain, event_start DESC
+            SELECT DISTINCT ON (pe.domain)
+                pe.domain::text,
+                pe.event_label,
+                pe.confidence::text,
+                pe.event_start,
+                pe.agent_temp_c,
+                pe.agent_power_mw,
+                pe.agent_cpu_load_pct,
+                pe.feature_snapshot,
+                an.node_name
+            FROM perceptual_events pe
+            JOIN agent_nodes an ON an.id = pe.agent_node_id
+            ORDER BY pe.domain, pe.event_start DESC
         """)
 
         # Most recent Pi vitals (any event with vitals)
@@ -265,12 +267,31 @@ async def get_ecology_state() -> dict:
             FROM perceptual_events
         """)
 
+        # Per-node activity summary (nodes seen in last 24h)
+        active_nodes = await conn.fetch("""
+            SELECT
+                an.node_name,
+                an.node_type,
+                COUNT(pe.id)                                                         AS event_count_24h,
+                COUNT(pe.id) FILTER (WHERE pe.event_start >= NOW() - INTERVAL '1 hour') AS event_count_1h,
+                MAX(pe.event_start)                                                  AS last_event,
+                MODE() WITHIN GROUP (ORDER BY pe.domain)                             AS primary_domain
+            FROM agent_nodes an
+            LEFT JOIN perceptual_events pe ON pe.agent_node_id = an.id
+                AND pe.event_start >= NOW() - INTERVAL '24 hours'
+            GROUP BY an.id, an.node_name, an.node_type
+            HAVING COUNT(pe.id) > 0
+            ORDER BY last_event DESC NULLS LAST
+            LIMIT 10
+        """)
+
     return {
         "domain_latest":     [dict(r) for r in domain_latest],
         "vitals":            dict(vitals) if vitals else None,
         "latest_resonance":  dict(latest_resonance) if latest_resonance else None,
         "active_motifs":     [dict(r) for r in active_motifs],
         "totals":            dict(totals) if totals else {},
+        "active_nodes":      [dict(r) for r in active_nodes],
     }
 
 

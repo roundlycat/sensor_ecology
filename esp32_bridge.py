@@ -42,8 +42,10 @@ logging.basicConfig(
     format="%(asctime)s [bridge] %(levelname)s %(message)s",
 )
 
-BROKER_HOST = os.getenv("MQTT_BROKER_HOST", "localhost")
+BROKER_HOST  = os.getenv("MQTT_BROKER_HOST", "localhost")
 BROKER_PORT  = int(os.getenv("MQTT_BROKER_PORT", "1883"))
+MQTT_USER    = os.getenv("MQTT_USER", "")
+MQTT_PASS    = os.getenv("MQTT_PASS", "")
 # Set SENSOR_DB_DSN in the environment (or a .env file) — never hardcode credentials.
 DB_DSN = os.getenv("SENSOR_DB_DSN", "dbname=sensor_ecology user=sean host=/var/run/postgresql")
 
@@ -211,6 +213,8 @@ class ESP32Bridge:
         signal.signal(signal.SIGINT,  lambda s, f: self.stop())
         signal.signal(signal.SIGTERM, lambda s, f: self.stop())
 
+        if MQTT_USER:
+            self._client.username_pw_set(MQTT_USER, MQTT_PASS)
         self._client.connect(BROKER_HOST, BROKER_PORT, keepalive=60)
         self._client.loop_start()
         log.info(f"ESP32 bridge running (broker={BROKER_HOST}:{BROKER_PORT})")

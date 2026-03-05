@@ -11,6 +11,7 @@ Topic structure:
 
 import json
 import logging
+import os
 import threading
 import time
 import uuid
@@ -23,6 +24,8 @@ import paho.mqtt.client as mqtt
 log = logging.getLogger(__name__)
 
 BROKER_HOST = "localhost"
+MQTT_USER   = os.getenv("MQTT_USER", "")
+MQTT_PASS   = os.getenv("MQTT_PASS", "")
 BROKER_PORT = 1883
 
 
@@ -106,6 +109,8 @@ class MQTTBus:
     # ── Connection ────────────────────────────────────────────────────────────
 
     def connect(self, host: str = BROKER_HOST, port: int = BROKER_PORT):
+        if MQTT_USER:
+            self._client.username_pw_set(MQTT_USER, MQTT_PASS)
         self._client.connect(host, port, keepalive=60)
         self._client.loop_start()
         if not self._connected.wait(timeout=5):

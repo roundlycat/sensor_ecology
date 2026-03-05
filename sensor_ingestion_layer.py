@@ -390,7 +390,7 @@ class EmbodiedStatePoller(SensorPoller):
         channels=[
             ChangeThreshold("acceleration_magnitude", absolute=0.15, relative=0.10),
             ChangeThreshold("current_mA",             absolute=150,  relative=0.15),
-            ChangeThreshold("cpu_temp_c",             absolute=3.0,  relative=0.05),
+            ChangeThreshold("cpu_temp_c",             absolute=8.0,  relative=0.15),
         ],
         quorum=1,
         cooldown_s=5.0,
@@ -539,9 +539,9 @@ class EmbodiedStatePoller(SensorPoller):
         cpu_temp = by_channel.get("cpu_temp_c")
         bcpu = self.baseline.baseline("cpu_temp_c")
         if cpu_temp and bcpu:
-            if cpu_temp > bcpu + 5:
+            if cpu_temp > bcpu + 8:
                 parts.append("thermal_stress")
-            elif cpu_temp < bcpu - 3:
+            elif cpu_temp < bcpu - 8:
                 parts.append("thermal_recovery")
 
         return "_".join(parts) if parts else "embodied_state_shift"

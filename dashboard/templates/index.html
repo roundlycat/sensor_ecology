@@ -178,7 +178,11 @@
     function domainColor(d) { return DOMAINS[d]?.color || '#8896b3'; }
 
     // ── View switching ────────────────────────────────────────────────────────────
-    let currentView = 'field';
+    const urlParams = new URLSearchParams(window.location.search);
+    let currentView = urlParams.get('view') || 'field';
+    const isKiosk = urlParams.has('kiosk');
+    if (isKiosk) document.body.classList.add('kiosk');
+
     function switchView(v) {
       document.querySelectorAll('.view').forEach(el => el.classList.remove('active'));
       document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
@@ -761,6 +765,7 @@
     loadFieldState();
     setInterval(loadFieldState, 10_000);
     initNarrator();
+    switchView(currentView);
 
   </script>
 </body>

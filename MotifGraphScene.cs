@@ -27,46 +27,46 @@ namespace AgentPerception
         // -----------------------------------------------------------------------
 
         [Header("Layout")]
-        [SerializeField] Transform  _graphRoot;         // parent for all nodes; set to agent anchor
-        [SerializeField] float      _innerRadius  = 0.12f;   // closest orbit ring
-        [SerializeField] float      _ringSpacing  = 0.09f;   // distance between rings
-        [SerializeField] int        _nodesPerRing = 8;       // max nodes per orbit ring
-        [SerializeField] float      _nodeElevationVariance = 0.04f;
+        [SerializeField] Transform _graphRoot;         // parent for all nodes; set to agent anchor
+        [SerializeField] float _innerRadius = 0.12f;   // closest orbit ring
+        [SerializeField] float _ringSpacing = 0.09f;   // distance between rings
+        [SerializeField] int _nodesPerRing = 8;       // max nodes per orbit ring
+        [SerializeField] float _nodeElevationVariance = 0.04f;
 
         [Header("Prefabs")]
         [SerializeField] GameObject _motifNodePrefab;    // prefab with MotifNode component
 
         [Header("References")]
         [SerializeField] MotifResonanceRenderer _resonanceRenderer;
-        [SerializeField] PerceptualEventBus     _bus;
+        [SerializeField] PerceptualEventBus _bus;
 
         [Header("Fetch")]
-        [SerializeField] string     _relayHost    = "192.168.1.100";
-        [SerializeField] int        _relayPort    = 8765;
-        [SerializeField] int        _minRecurrences = 0;
-        [SerializeField] float      _refreshIntervalS = 30f;   // re-fetch motif list
+        [SerializeField] string _relayHost = "192.168.1.100";
+        [SerializeField] int _relayPort = 8765;
+        [SerializeField] int _minRecurrences = 0;
+        [SerializeField] float _refreshIntervalS = 30f;   // re-fetch motif list
 
         [Header("Interaction")]
-        [SerializeField] ARRaycastManager   _arRaycastManager;
-        [SerializeField] LayerMask          _nodeLayer;
+        [SerializeField] ARRaycastManager _arRaycastManager;
+        [SerializeField] LayerMask _nodeLayer;
 
         [Header("UI")]
-        [SerializeField] TMPro.TextMeshPro  _statusText;   // optional; assign to show bootstrap / error state
+        [SerializeField] TMPro.TextMeshPro _statusText;   // optional; assign to show bootstrap / error state
 
         // -----------------------------------------------------------------------
         // Internal state
         // -----------------------------------------------------------------------
 
         string _baseUrl;
-        readonly Dictionary<string, MotifNode> _nodes    = new();
-        readonly List<ARRaycastHit>            _hits     = new();
-        MotifNode                              _selected;
-        Coroutine                              _fetchLoop;
-        bool                                  _graphBuilt;
+        readonly Dictionary<string, MotifNode> _nodes = new();
+        readonly List<ARRaycastHit> _hits = new();
+        MotifNode _selected;
+        Coroutine _fetchLoop;
+        bool _graphBuilt;
 
         // Force-directed layout state
-        readonly Dictionary<string, Vector3> _positions   = new();
-        readonly Dictionary<string, Vector3> _velocities  = new();
+        readonly Dictionary<string, Vector3> _positions = new();
+        readonly Dictionary<string, Vector3> _velocities = new();
 
         // -----------------------------------------------------------------------
         // Lifecycle
@@ -156,247 +156,277 @@ namespace AgentPerception
 
         void UpdateGraph(MotifData[] motifs)
         {
-            var incomingIds = new HashSet<string>(motifs.Select(m => m.id));
-
-            // Remove nodes no longer in the motif list
-            var toRemove = _nodes.Keys.Where(id => !incomingIds.Contains(id)).ToList();
-            foreach (var id in toRemove)
             {
-                if (_nodes.TryGetValue(id, out var node))
+                Debug.Log($"[MotifGraphScene] UpdateGraph called with {motifs.Length} motifs");
+
+                var incomingIds = new HashSet<string>(motifs.Select(m => m.id));
+
+                // Remove nodes no longer in the motif list
+                var toRemove = _nodes.Keys.Where(id => !incomingIds.Contains(id)).ToList();
+                foreach (var id in toRemove)
                 {
-                    _resonanceRenderer?.UnregisterMotifNode(id);
-                    Destroy(node.gameObject);
-                    _nodes.Remove(id);
-                    _positions.Remove(id);
-                    _velocities.Remove(id);
-                }
-            }
-
-            // Sort by recurrence so high-resonance motifs land on inner rings
-            var sorted = motifs.OrderByDescending(m => m.recurrence_count).ToArray();
-
-            for (int i = 0; i < sorted.Length; i++)
-            {
-                var data = sorted[i];
-
-                if (_nodes.ContainsKey(data.id))
-                {
-                    // Update existing node's data display without repositioning
-                    // (force layout keeps positions stable across refreshes)
-                    continue;
+                    // ... removal code ...
                 }
 
-                // Place new node
-                var startPos = OrbitalStartPosition(i, sorted.Length);
-                SpawnNode(data, _graphRoot.position + startPos);
-            }
+                var sorted = motifs.OrderByDescending(m => m.recurrence_count).ToArray();
+                Debug.Log($"[MotifGraphScene] Sorted to {sorted.Length} motifs");
 
-            _graphBuilt = true;
-        }
-
-        void SpawnNode(MotifData data, Vector3 worldPos)
-        {
-            if (_motifNodePrefab == null)
-            {
-                Debug.LogWarning("[MotifGraphScene] No motifNodePrefab assigned.");
-                return;
-            }
-
-            var go = Instantiate(_motifNodePrefab, worldPos, Quaternion.identity, _graphRoot);
-            var node = go.GetComponent<MotifNode>();
-            if (node == null)
-            {
-                Debug.LogError("[MotifGraphScene] MotifNode component missing from prefab.");
-                Destroy(go);
-                return;
-            }
-
-            // Get a PerceptualEventClient from the scene
-            var client = FindObjectOfType<PerceptualEventClient>();
-
-            node.Initialise(data, _resonanceRenderer, client, _bus);
-
-            _nodes[data.id]     = node;
-            _positions[data.id] = worldPos - _graphRoot.position;
-            _velocities[data.id] = Vector3.zero;
-
-            // Stagger appearance
-            StartCoroutine(AnimateIn(go, _nodes.Count * 0.05f));
-        }
-
-        IEnumerator AnimateIn(GameObject go, float delay)
-        {
-            go.transform.localScale = Vector3.zero;
-            yield return new WaitForSeconds(delay);
-
-            float t = 0;
-            var target = go.transform.localScale;
-            // Reset to zero in case Update moved it
-            var finalScale = go.GetComponent<MotifNode>() != null
-                ? go.transform.localScale
-                : Vector3.one * 0.04f;
-
-            go.transform.localScale = Vector3.zero;
-            while (t < 1f)
-            {
-                t += Time.deltaTime / 0.3f;
-                go.transform.localScale = Vector3.Lerp(Vector3.zero, finalScale,
-                    Mathf.SmoothStep(0, 1, t));
-                yield return null;
-            }
-        }
-
-        // -----------------------------------------------------------------------
-        // Orbital layout — concentric rings, sorted by recurrence
-        // -----------------------------------------------------------------------
-
-        Vector3 OrbitalStartPosition(int index, int total)
-        {
-            int ring      = index / _nodesPerRing;
-            int slotInRing = index % _nodesPerRing;
-            int nodesThisRing = Mathf.Min(_nodesPerRing, total - ring * _nodesPerRing);
-
-            float radius  = _innerRadius + ring * _ringSpacing;
-            float angle   = (slotInRing / (float)nodesThisRing) * Mathf.PI * 2f;
-            float elevate = UnityEngine.Random.Range(-_nodeElevationVariance, _nodeElevationVariance);
-
-            return new Vector3(
-                Mathf.Cos(angle) * radius,
-                elevate,
-                Mathf.Sin(angle) * radius
-            );
-        }
-
-        // -----------------------------------------------------------------------
-        // Force-directed layout
-        // Keeps nodes separated and gently orbiting so the graph breathes.
-        // Runs every frame after initial build — very lightweight (n usually < 50).
-        // -----------------------------------------------------------------------
-
-        const float REPULSION     = 0.0004f;
-        const float DAMPING       = 0.85f;
-        const float MIN_DIST      = 0.06f;
-        const float ORBIT_SPEED   = 0.04f;   // radians/second per ring
-        const float MAX_VELOCITY  = 0.002f;
-
-        void StepForceLayout(float dt)
-        {
-            var ids   = _positions.Keys.ToArray();
-            int count = ids.Length;
-            if (count < 2) return;
-
-            // Repulsion between all pairs
-            for (int i = 0; i < count; i++)
-            {
-                for (int j = i + 1; j < count; j++)
+                for (int i = 0; i < sorted.Length; i++)
                 {
-                    var diff = _positions[ids[i]] - _positions[ids[j]];
-                    float dist = Mathf.Max(diff.magnitude, MIN_DIST);
-                    var force  = diff.normalized * (REPULSION / (dist * dist));
+                    var data = sorted[i];
+                    Debug.Log($"[MotifGraphScene] Processing motif {i}: {data.label}, already
+          
+            exists: { _nodes.ContainsKey(data.id)}
+                    ");
+          
+          if (_nodes.ContainsKey(data.id))
+                    {
+                        continue;
+                    }
 
-                    if (_velocities.ContainsKey(ids[i])) _velocities[ids[i]] += force;
-                    if (_velocities.ContainsKey(ids[j])) _velocities[ids[j]] -= force;
+                    var incomingIds = new HashSet<string>(motifs.Select(m => m.id));
+
+                    // Remove nodes no longer in the motif list
+                    var toRemove = _nodes.Keys.Where(id => !incomingIds.Contains(id)).ToList();
+                    foreach (var id in toRemove)
+                    {
+                        if (_nodes.TryGetValue(id, out var node))
+                        {
+                            _resonanceRenderer?.UnregisterMotifNode(id);
+                            Destroy(node.gameObject);
+                            _nodes.Remove(id);
+                            _positions.Remove(id);
+                            _velocities.Remove(id);
+                        }
+                    }
+
+                    // Sort by recurrence so high-resonance motifs land on inner rings
+                    var sorted = motifs.OrderByDescending(m => m.recurrence_count).ToArray();
+
+                    for (int i = 0; i < sorted.Length; i++)
+                    {
+                        var data = sorted[i];
+
+                        if (_nodes.ContainsKey(data.id))
+                        {
+                            // Update existing node's data display without repositioning
+                            // (force layout keeps positions stable across refreshes)
+                            continue;
+                        }
+
+                        // Place new node
+                        var startPos = OrbitalStartPosition(i, sorted.Length);
+                        Debug.Log($"[MotifGraphScene] Spawning node {data.label} at {_graphRoot.position +
+         startPos}");
+                        SpawnNode(data, _graphRoot.position + startPos);
+                    }
+
+                    _graphBuilt = true;
                 }
-            }
 
-            // Slow orbital drift — each node drifts around its ring axis
-            for (int i = 0; i < count; i++)
-            {
-                var id  = ids[i];
-                var pos = _positions[id];
-                float ringRadius = new Vector2(pos.x, pos.z).magnitude;
-                if (ringRadius < 0.001f) continue;
+                void SpawnNode(MotifData data, Vector3 worldPos)
+                {
+                    if (_motifNodePrefab == null)
+                    {
+                        Debug.LogWarning("[MotifGraphScene] No motifNodePrefab assigned.");
+                        return;
+                    }
 
-                // Tangent in XZ plane
-                var tangent = new Vector3(-pos.z, 0, pos.x).normalized;
-                int ring = Mathf.RoundToInt((ringRadius - _innerRadius) / Mathf.Max(_ringSpacing, 0.001f));
-                float speed = ORBIT_SPEED * (1f + ring * 0.3f) * dt;
-                _velocities[id] += tangent * speed;
-            }
+                    var go = Instantiate(_motifNodePrefab, worldPos, Quaternion.identity, _graphRoot);
+                    var node = go.GetComponent<MotifNode>();
+                    if (node == null)
+                    {
+                        Debug.LogError("[MotifGraphScene] MotifNode component missing from prefab.");
+                        Destroy(go);
+                        return;
+                    }
 
-            // Integrate + dampen + apply
-            foreach (var id in ids)
-            {
-                _velocities[id] *= DAMPING;
-                _velocities[id]  = Vector3.ClampMagnitude(_velocities[id], MAX_VELOCITY);
-                _positions[id]  += _velocities[id];
+                    // Get a PerceptualEventClient from the scene
+                    var client = FindObjectOfType<PerceptualEventClient>();
 
-                if (_nodes.TryGetValue(id, out var node) && node != null)
-                    node.transform.position = _graphRoot.position + _positions[id];
-            }
-        }
+                    node.Initialise(data, _resonanceRenderer, client, _bus);
 
-        // -----------------------------------------------------------------------
-        // Tap interaction
-        // -----------------------------------------------------------------------
+                    _nodes[data.id] = node;
+                    _positions[data.id] = worldPos - _graphRoot.position;
+                    _velocities[data.id] = Vector3.zero;
 
-        void HandleTapInput()
-        {
+                    // Stagger appearance
+                    StartCoroutine(AnimateIn(go, _nodes.Count * 0.05f));
+                }
+
+                IEnumerator AnimateIn(GameObject go, float delay)
+                {
+                    go.transform.localScale = Vector3.zero;
+                    yield return new WaitForSeconds(delay);
+
+                    float t = 0;
+                    var target = go.transform.localScale;
+                    // Reset to zero in case Update moved it
+                    var finalScale = go.GetComponent<MotifNode>() != null
+                        ? go.transform.localScale
+                        : Vector3.one * 0.04f;
+
+                    go.transform.localScale = Vector3.zero;
+                    while (t < 1f)
+                    {
+                        t += Time.deltaTime / 0.3f;
+                        go.transform.localScale = Vector3.Lerp(Vector3.zero, finalScale,
+                            Mathf.SmoothStep(0, 1, t));
+                        yield return null;
+                    }
+                }
+
+                // -----------------------------------------------------------------------
+                // Orbital layout — concentric rings, sorted by recurrence
+                // -----------------------------------------------------------------------
+
+                Vector3 OrbitalStartPosition(int index, int total)
+                {
+                    int ring = index / _nodesPerRing;
+                    int slotInRing = index % _nodesPerRing;
+                    int nodesThisRing = Mathf.Min(_nodesPerRing, total - ring * _nodesPerRing);
+
+                    float radius = _innerRadius + ring * _ringSpacing;
+                    float angle = (slotInRing / (float)nodesThisRing) * Mathf.PI * 2f;
+                    float elevate = UnityEngine.Random.Range(-_nodeElevationVariance, _nodeElevationVariance);
+
+                    return new Vector3(
+                        Mathf.Cos(angle) * radius,
+                        elevate,
+                        Mathf.Sin(angle) * radius
+                    );
+                }
+
+                // -----------------------------------------------------------------------
+                // Force-directed layout
+                // Keeps nodes separated and gently orbiting so the graph breathes.
+                // Runs every frame after initial build — very lightweight (n usually < 50).
+                // -----------------------------------------------------------------------
+
+                const float REPULSION = 0.0004f;
+                const float DAMPING = 0.85f;
+                const float MIN_DIST = 0.06f;
+                const float ORBIT_SPEED = 0.04f;   // radians/second per ring
+                const float MAX_VELOCITY = 0.002f;
+
+                void StepForceLayout(float dt)
+                {
+                    var ids = _positions.Keys.ToArray();
+                    int count = ids.Length;
+                    if (count < 2) return;
+
+                    // Repulsion between all pairs
+                    for (int i = 0; i < count; i++)
+                    {
+                        for (int j = i + 1; j < count; j++)
+                        {
+                            var diff = _positions[ids[i]] - _positions[ids[j]];
+                            float dist = Mathf.Max(diff.magnitude, MIN_DIST);
+                            var force = diff.normalized * (REPULSION / (dist * dist));
+
+                            if (_velocities.ContainsKey(ids[i])) _velocities[ids[i]] += force;
+                            if (_velocities.ContainsKey(ids[j])) _velocities[ids[j]] -= force;
+                        }
+                    }
+
+                    // Slow orbital drift — each node drifts around its ring axis
+                    for (int i = 0; i < count; i++)
+                    {
+                        var id = ids[i];
+                        var pos = _positions[id];
+                        float ringRadius = new Vector2(pos.x, pos.z).magnitude;
+                        if (ringRadius < 0.001f) continue;
+
+                        // Tangent in XZ plane
+                        var tangent = new Vector3(-pos.z, 0, pos.x).normalized;
+                        int ring = Mathf.RoundToInt((ringRadius - _innerRadius) / Mathf.Max(_ringSpacing, 0.001f));
+                        float speed = ORBIT_SPEED * (1f + ring * 0.3f) * dt;
+                        _velocities[id] += tangent * speed;
+                    }
+
+                    // Integrate + dampen + apply
+                    foreach (var id in ids)
+                    {
+                        _velocities[id] *= DAMPING;
+                        _velocities[id] = Vector3.ClampMagnitude(_velocities[id], MAX_VELOCITY);
+                        _positions[id] += _velocities[id];
+
+                        if (_nodes.TryGetValue(id, out var node) && node != null)
+                            node.transform.position = _graphRoot.position + _positions[id];
+                    }
+                }
+
+                // -----------------------------------------------------------------------
+                // Tap interaction
+                // -----------------------------------------------------------------------
+
+                void HandleTapInput()
+                {
 #if ENABLE_INPUT_SYSTEM
             if (Touchscreen.current == null) return;
             var touch = Touchscreen.current.primaryTouch;
             if (!touch.press.wasPressedThisFrame) return;
             var screenPos = touch.position.ReadValue();
 #else
-            if (!Input.GetMouseButtonDown(0)) return;
-            var screenPos = (Vector2)Input.mousePosition;
+                    if (!Input.GetMouseButtonDown(0)) return;
+                    var screenPos = (Vector2)Input.mousePosition;
 #endif
-            // First try AR raycast against physical planes
-            if (_arRaycastManager != null
-                && _arRaycastManager.Raycast(screenPos, _hits, TrackableType.All))
-            {
-                // AR hit found — not a node tap (graph interaction handled below)
-            }
+                    // First try AR raycast against physical planes
+                    if (_arRaycastManager != null
+                        && _arRaycastManager.Raycast(screenPos, _hits, TrackableType.All))
+                    {
+                        // AR hit found — not a node tap (graph interaction handled below)
+                    }
 
-            // Raycast against node colliders
-            if (Camera.main == null) return;
-            var ray = Camera.main.ScreenPointToRay(screenPos);
+                    // Raycast against node colliders
+                    if (Camera.main == null) return;
+                    var ray = Camera.main.ScreenPointToRay(screenPos);
 
-            if (Physics.Raycast(ray, out var hit, 5f, _nodeLayer))
-            {
-                var node = hit.collider.GetComponentInParent<MotifNode>();
-                if (node != null)
-                {
-                    HandleNodeTap(node);
-                    return;
+                    if (Physics.Raycast(ray, out var hit, 5f, _nodeLayer))
+                    {
+                        var node = hit.collider.GetComponentInParent<MotifNode>();
+                        if (node != null)
+                        {
+                            HandleNodeTap(node);
+                            return;
+                        }
+                    }
+
+                    // Tap on empty space — deselect
+                    if (_selected != null)
+                    {
+                        _selected.Deselect();
+                        _selected = null;
+                    }
                 }
-            }
 
-            // Tap on empty space — deselect
-            if (_selected != null)
-            {
-                _selected.Deselect();
-                _selected = null;
-            }
-        }
+                void HandleNodeTap(MotifNode node)
+                {
+                    if (_selected != null && _selected != node)
+                    {
+                        _selected.Deselect();
+                    }
 
-        void HandleNodeTap(MotifNode node)
-        {
-            if (_selected != null && _selected != node)
-            {
-                _selected.Deselect();
-            }
+                    node.OnTapped();
+                    _selected = node.IsSelected ? node : null;
+                }
 
-            node.OnTapped();
-            _selected = node.IsSelected ? node : null;
-        }
+                // -----------------------------------------------------------------------
+                // Status text helper
+                // -----------------------------------------------------------------------
 
-        // -----------------------------------------------------------------------
-        // Status text helper
-        // -----------------------------------------------------------------------
-
-        void SetStatus(string message)
-        {
-            if (_statusText == null) return;
-            _statusText.text    = message ?? "";
-            _statusText.enabled = message != null;
-        }
+                void SetStatus(string message)
+                {
+                    if (_statusText == null) return;
+                    _statusText.text = message ?? "";
+                    _statusText.enabled = message != null;
+                }
 
         // -----------------------------------------------------------------------
         // Public API — for external systems
         // -----------------------------------------------------------------------
 
-        /// Returns the transform of a motif node by id, or null if not in scene.
+                /// Returns the transform of a motif node by id, or null if not in scene.
         public Transform GetNodeTransform(string motifId)
         {
             _nodes.TryGetValue(motifId, out var node);

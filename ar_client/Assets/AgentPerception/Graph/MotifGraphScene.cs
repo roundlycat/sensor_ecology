@@ -156,6 +156,7 @@ namespace AgentPerception
 
         void UpdateGraph(MotifData[] motifs)
         {
+            Debug.Log($"[MotifGraphScene] UpdateGraph called with {motifs.Length} motifs");
             var incomingIds = new HashSet<string>(motifs.Select(m => m.id));
 
             // Remove nodes no longer in the motif list
@@ -174,6 +175,7 @@ namespace AgentPerception
 
             // Sort by recurrence so high-resonance motifs land on inner rings
             var sorted = motifs.OrderByDescending(m => m.recurrence_count).ToArray();
+            Debug.Log($"[MotifGraphScene] Sorted {sorted.Length} motifs by recurrence");
 
             for (int i = 0; i < sorted.Length; i++)
             {
@@ -181,6 +183,7 @@ namespace AgentPerception
 
                 if (_nodes.ContainsKey(data.id))
                 {
+                    Debug.Log($"[MotifGraphScene] Node {data.label} already exists, skipping");
                     // Update existing node's data display without repositioning
                     // (force layout keeps positions stable across refreshes)
                     continue;
@@ -188,6 +191,7 @@ namespace AgentPerception
 
                 // Place new node
                 var startPos = OrbitalStartPosition(i, sorted.Length);
+                Debug.Log($"[MotifGraphScene] Spawning node {data.label} at {_graphRoot.position + startPos}");
                 SpawnNode(data, _graphRoot.position + startPos);
             }
 
@@ -226,17 +230,11 @@ namespace AgentPerception
 
         IEnumerator AnimateIn(GameObject go, float delay)
         {
+            var finalScale = Vector3.one * 0.04f;  // Target final scale
             go.transform.localScale = Vector3.zero;
             yield return new WaitForSeconds(delay);
 
             float t = 0;
-            var target = go.transform.localScale;
-            // Reset to zero in case Update moved it
-            var finalScale = go.GetComponent<MotifNode>() != null
-                ? go.transform.localScale
-                : Vector3.one * 0.04f;
-
-            go.transform.localScale = Vector3.zero;
             while (t < 1f)
             {
                 t += Time.deltaTime / 0.3f;
@@ -244,6 +242,7 @@ namespace AgentPerception
                     Mathf.SmoothStep(0, 1, t));
                 yield return null;
             }
+            go.transform.localScale = finalScale;  // Ensure final scale is set
         }
 
         // -----------------------------------------------------------------------

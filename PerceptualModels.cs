@@ -219,11 +219,32 @@ namespace AgentPerception
         [NonSerialized] public List<MotifDriftLog> DriftPath = new();
     }
 
+    // MotifData — matches /api/motifs/active response fields
+    [Serializable]
+    public class MotifData
+    {
+        public string id;
+        public string label;
+        public string domain;
+        public int    recurrence_count;
+        public float  mean_cosine_distance;
+        public string last_seen;
+        public string created_at;
+
+        [NonSerialized] public DateTime LastSeen;
+        [NonSerialized] public DateTime CreatedAt;
+
+        public void Hydrate()
+        {
+            if (DateTime.TryParse(last_seen, out var ls)) LastSeen = ls.ToLocalTime();
+            if (DateTime.TryParse(created_at, out var ca)) CreatedAt = ca.ToLocalTime();
+        }
+    }
+
     [Serializable]
     public class MotifListResponse
     {
-        public PerceptualMotif[] motifs;
-        public int               total;
+        public MotifData[] motifs;
     }
 
     [Serializable]

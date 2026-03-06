@@ -3,7 +3,12 @@ guid: 6103d768754ab7a4e9b59992c3f7cc8b
 MonoImporter:
   externalObjects: {}
   serializedVersion: 2
-  defaultReferences: []
+  defaultReferences:
+  - _arcMaterial: {fileID: 2100000, guid: f48e520062118284bb81135b0d1d803b, type: 2}
+  - _echoPanelRoot: {instanceID: 0}
+  - _echoListContainer: {instanceID: 0}
+  - _echoItemPrefab: {instanceID: 0}
+  - _echoPanelTitle: {instanceID: 0}
   executionOrder: 0
   icon: {instanceID: 0}
   userData: 

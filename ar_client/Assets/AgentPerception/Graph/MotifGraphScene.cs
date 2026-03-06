@@ -118,7 +118,7 @@ namespace AgentPerception
 
         IEnumerator FetchMotifs()
         {
-            var url = $"{_baseUrl}/api/motifs?min_recurrences={_minRecurrences}&limit=200";
+            var url = $"{_baseUrl}/api/motifs/active?limit=100";
             using var req = UnityEngine.Networking.UnityWebRequest.Get(url);
             req.timeout = 10;
             yield return req.SendWebRequest();
@@ -129,14 +129,15 @@ namespace AgentPerception
                 yield break;
             }
 
-            var response = JsonUtility.FromJson<MotifListResponse>(req.downloadHandler.text);
+            var wrapped = "{\"motifs\":" + req.downloadHandler.text + "}";
+            var response = JsonUtility.FromJson<MotifListResponse>(wrapped);
 
-            if (response.bootstrap)
-            {
-                Debug.Log("[MotifGraphScene] Bootstrap state: motifs table is empty. Seed the corpus to begin.");
-                SetStatus("Seeding in progress\nNo motifs yet");
-                yield break;
-            }
+            //if (response.bootstrap)
+            //{
+            //    Debug.Log("[MotifGraphScene] Bootstrap state: motifs table is empty. Seed the corpus to begin.");
+            //    SetStatus("Seeding in progress\nNo motifs yet");
+            //    yield break;
+            //}
 
             SetStatus(null);
 

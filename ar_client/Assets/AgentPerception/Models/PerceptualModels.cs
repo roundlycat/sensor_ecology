@@ -223,4 +223,5 @@ namespace AgentPerception
     {
         public MotifDriftLog[] drifts;
     }
+
 }

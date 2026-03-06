@@ -1,0 +1,23 @@
+====================================================
+  Hedgehogger-Ecology Sync Daemon                   
+  Bridging the Hearth to the Cosmos...              
+====================================================
+Γ£à Firebase Admin Initialized successfully!
+≡ƒô╗ Sync Daemon is actively listening for relational events...
+file:///C:/Users/seank/source/repos/hedgehoggerv2/sync_daemon.js:88
+    if (snapshot.metadata.hasPendingWrites) return;
+                          ^
+
+TypeError: Cannot read properties of undefined (reading 'hasPendingWrites')
+    at file:///C:/Users/seank/source/repos/hedgehoggerv2/sync_daemon.js:88:27
+    at QueryWatch.onNext (C:\Users\seank\source\repos\hedgehoggerv2\node_modules\@google-cloud\firestore\build\src\reference\query.js:1048:13)
+    at QueryWatch.pushSnapshot (C:\Users\seank\source\repos\hedgehoggerv2\node_modules\@google-cloud\firestore\build\src\watch.js:476:18)
+    at QueryWatch.onData (C:\Users\seank\source\repos\hedgehoggerv2\node_modules\@google-cloud\firestore\build\src\watch.js:360:26)
+    at PassThrough.<anonymous> (C:\Users\seank\source\repos\hedgehoggerv2\node_modules\@google-cloud\firestore\build\src\watch.js:322:26)
+    at PassThrough.emit (node:events:508:28)
+    at addChunk (node:internal/streams/readable:559:12)
+    at readableAddChunkPushObjectMode (node:internal/streams/readable:536:3)
+    at Readable.push (node:internal/streams/readable:391:5)
+    at node:internal/streams/transform:178:12
+
+Node.js v24.12.0

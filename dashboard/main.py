@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.db.connection import init_pool, close_pool
 
 from app.db.corpus_connection import init_corpus_pool, close_corpus_pool
-from app.api import agents, observations, semantic, live, stats, motifs
+from app.api import agents, observations, semantic, live, stats, motifs, musings
 from app.api import corpus
 from app.services.narrator import start_narrator_loop
 
@@ -61,6 +61,7 @@ app.include_router(observations.router, prefix="/api/observations",  tags=["obse
 app.include_router(semantic.router,     prefix="/api/semantic",      tags=["semantic"])
 app.include_router(stats.router,        prefix="/api/stats",         tags=["stats"])
 app.include_router(motifs.router,       prefix="/api/motifs",        tags=["motifs"])
+app.include_router(musings.router,      prefix="/api/musings",       tags=["musings"])
 
 app.include_router(corpus.router,       prefix="/api/corpus",        tags=["corpus"])
 app.include_router(live.router,         prefix="/live",              tags=["live"])

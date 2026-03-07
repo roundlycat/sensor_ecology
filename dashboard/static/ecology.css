@@ -743,3 +743,78 @@ body.kiosk #stream-filter {
 body.kiosk #stream-header {
   min-height: 56px;
 }
+
+/* ── MUSINGS VIEW ── */
+#view-musings {
+  flex-direction: column;
+  overflow-y: auto;
+  align-items: center;
+  padding: 40px 20px;
+  background: radial-gradient(circle at 50% 0%, rgba(167, 139, 250, 0.05), transparent 60%);
+}
+
+#view-musings::-webkit-scrollbar {
+  width: 4px;
+}
+#view-musings::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+
+#musing-container {
+  max-width: 680px;
+  width: 100%;
+}
+
+.musing-card {
+  margin-bottom: 60px;
+  opacity: 0;
+  animation: fade-in-up 1s ease forwards;
+}
+
+@keyframes fade-in-up {
+  0% { opacity: 0; transform: translateY(20px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+.musing-title {
+  font-family: var(--font);
+  font-weight: 300;
+  font-size: 24px;
+  color: var(--text);
+  margin-bottom: 8px;
+  letter-spacing: 0.02em;
+}
+
+body.kiosk .musing-title {
+  font-size: 32px;
+}
+
+.musing-meta {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: #a78bfa;
+  margin-bottom: 24px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+body.kiosk .musing-meta {
+  font-size: 13px;
+}
+
+.musing-body {
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--text-mid);
+  font-weight: 300;
+}
+
+body.kiosk .musing-body {
+  font-size: 18px;
+  line-height: 1.8;
+}
+
+.musing-body p {
+  margin-bottom: 1.2em;
+}

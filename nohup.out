@@ -1,0 +1,17 @@
+Traceback (most recent call last):
+  File "/home/sean/sensor_ecology/sensor_ingestion_layer.py", line 1454, in <module>
+    asyncio.run(main())
+  File "/usr/lib/python3.11/asyncio/runners.py", line 190, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib/python3.11/asyncio/base_events.py", line 653, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/home/sean/sensor_ecology/sensor_ingestion_layer.py", line 1407, in main
+    DB_URL             = os.environ["DATABASE_URL"]
+                         ~~~~~~~~~~^^^^^^^^^^^^^^^^
+  File "<frozen os>", line 679, in __getitem__
+KeyError: 'DATABASE_URL'

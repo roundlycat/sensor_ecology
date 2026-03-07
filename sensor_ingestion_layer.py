@@ -564,7 +564,7 @@ class RelationalContactPoller(SensorPoller):
             ChangeThreshold("piezo_amplitude", absolute=200, relative=0.30),
         ],
         quorum=1,
-        cooldown_s=1.0,  # fast cooldown — contact events can be rapid
+        cooldown_s=30.0,  # increased from 1.0 to balance data
     )
 
     # Tap sequence detector state
@@ -575,7 +575,7 @@ class RelationalContactPoller(SensorPoller):
         super().__init__(
             domain=SensorDomain.RELATIONAL_CONTACT,
             thresholds=self.DEFAULT_THRESHOLDS,
-            poll_interval_s=0.05,   # 20Hz
+            poll_interval_s=0.2,   # decreased from 0.05 to reduce volume
             pipeline=pipeline,
             agent_state_fn=agent_state_fn,
             db_writer=db_writer,
@@ -711,7 +711,7 @@ class HighBandwidthPoller(SensorPoller):
             ChangeThreshold("frame_delta_rms",   absolute=0.5,  relative=0.20),
         ],
         quorum=1,
-        cooldown_s=30.0,
+        cooldown_s=120.0, # increased from 30.0 to balance data
     )
 
     def __init__(
@@ -727,7 +727,7 @@ class HighBandwidthPoller(SensorPoller):
         super().__init__(
             domain=SensorDomain.HIGH_BANDWIDTH,
             thresholds=self.DEFAULT_THRESHOLDS,
-            poll_interval_s=0.1,       # drain queue fast; threshold gate controls events
+            poll_interval_s=0.5,       # increased from 0.1s to reduce volume
             pipeline=pipeline,
             agent_state_fn=agent_state_fn,
             db_writer=db_writer,

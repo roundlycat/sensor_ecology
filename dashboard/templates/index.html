@@ -28,6 +28,7 @@
         <button class="nav-btn active" id="btn-field" onclick="switchView('field')">Field</button>
         <button class="nav-btn" id="btn-stream" onclick="switchView('stream')">Stream</button>
         <button class="nav-btn" id="btn-resonance" onclick="switchView('resonance')">Resonance</button>
+        <button class="nav-btn" id="btn-musings" onclick="switchView('musings')">Musings</button>
       </div>
 
       <div id="vitals">
@@ -139,6 +140,34 @@
         <div id="stream-feed"></div>
       </div>
 
+      <!-- ╔══ MUSINGS VIEW ════════════════════════════════════════════════╗ -->
+      <div class="view" id="view-musings">
+        <div id="musings-container" style="
+          max-width: 680px;
+          margin: 0 auto;
+          padding: 40px 24px;
+          height: 100%;
+          overflow-y: auto;
+        ">
+          <div id="musings-nav" style="
+            display: flex;
+            gap: 8px;
+            margin-bottom: 32px;
+            flex-wrap: wrap;
+          "></div>
+          <div id="musings-content" style="
+            font-family: var(--font);
+            font-size: 15px;
+            font-weight: 300;
+            line-height: 1.85;
+            color: var(--text-mid);
+            letter-spacing: 0.01em;
+          ">
+            <div class="empty-state">Loading musings…</div>
+          </div>
+        </div>
+      </div>
+
       <!-- ╔══ RESONANCE VIEW ═══════════════════════════════════════════════╗ -->
       <div class="view" id="view-resonance">
         <div id="motif-list">
@@ -157,6 +186,13 @@
             <div id="echo-title">Echoes</div>
             <div id="echo-list"></div>
           </div>
+        </div>
+      </div>
+
+      <!-- ╔══ MUSINGS VIEW ═════════════════════════════════════════════════╗ -->
+      <div class="view" id="view-musings">
+        <div id="musing-container">
+          <div class="empty-state">Loading musings...</div>
         </div>
       </div>
 
@@ -192,6 +228,7 @@
       if (v === 'resonance') loadMotifs();
       if (v === 'stream') ensureStreamStarted();
       if (v === 'field') resizeFieldCanvas();
+      if (v === 'musings') loadMusings();
     }
 
     // ── Toast ─────────────────────────────────────────────────────────────────────
@@ -753,6 +790,30 @@
 
 
     // ════════════════════════════════════════════════════════════════════════════
+    // MUSINGS VIEW
+    // ════════════════════════════════════════════════════════════════════════════
+    async function loadMusings() {
+      const container = document.getElementById('musing-container');
+      try {
+        const data = await apiFetch('/api/musings');
+        if (!data.musings || !data.musings.length) {
+          container.innerHTML = '<div class="empty-state">No musings found. Add some text files to the static/musings folder.</div>';
+          return;
+        }
+        container.innerHTML = data.musings.map((m, i) => `
+          <div class="musing-card" style="animation-delay: ${i * 0.1}s">
+            <div class="musing-title">${m.title}</div>
+            <div class="musing-meta">AI Reflection · ${fmtAge(new Date(m.created_at * 1000).toISOString())}</div>
+            <div class="musing-body">${m.content.split('\\n').filter(p => p.trim()).map(p => '<p>' + p + '</p>').join('')}</div>
+          </div>
+        `).join('');
+      } catch (e) {
+        container.innerHTML = '<div class="empty-state">Failed to load musings: ' + e.message + '</div>';
+      }
+    }
+
+
+    // ════════════════════════════════════════════════════════════════════════════
     // INIT
     // ════════════════════════════════════════════════════════════════════════════
     window.addEventListener('resize', () => {
@@ -766,6 +827,82 @@
     setInterval(loadFieldState, 10_000);
     initNarrator();
     switchView(currentView);
+
+
+    // ════════════════════════════════════════════════════════════════════════════
+    // MUSINGS VIEW
+    // ════════════════════════════════════════════════════════════════════════════
+    let musingsData = [];
+    let currentMusingIndex = 0;
+
+    function renderMarkdown(text) {
+      // Minimal markdown: headers, bold, italic, paragraphs
+      return text
+        .replace(/^# (.+)$/gm, '<h2 style="font-size:18px;font-weight:500;color:var(--text);margin:0 0 6px">$1</h2>')
+        .replace(/^## (.+)$/gm, '<h3 style="font-size:14px;font-weight:500;color:var(--text);margin:20px 0 4px">$1</h3>')
+        .replace(/\*\*(.+?)\*\*/g, '<strong style="color:var(--text)">$1</strong>')
+        .replace(/\*([^*]+)\*/g, '<em style="color:var(--text-mid)">$1</em>')
+        .replace(/^---$/gm, '<hr style="border:none;border-top:1px solid var(--border);margin:20px 0">')
+        .replace(/\n\n/g, '</p><p style="margin:0 0 16px">')
+        .replace(/^/, '<p style="margin:0 0 16px">')
+        .replace(/$/, '</p>');
+    }
+
+    function showMusing(index) {
+      const m = musingsData[index];
+      if (!m) return;
+      currentMusingIndex = index;
+
+      // Update nav pill states
+      document.querySelectorAll('.musing-pill').forEach((el, i) => {
+        el.style.opacity = i === index ? '1' : '0.4';
+        el.style.borderColor = i === index ? 'var(--text-dim)' : 'transparent';
+      });
+
+      const contentEl = document.getElementById('musings-content');
+      contentEl.style.opacity = '0';
+      setTimeout(() => {
+        contentEl.innerHTML = renderMarkdown(m.content);
+        contentEl.style.transition = 'opacity 1.2s ease';
+        contentEl.style.opacity = '1';
+      }, 300);
+    }
+
+    async function loadMusings() {
+      try {
+        const data = await apiFetch('/api/musings/');
+        musingsData = data.musings || [];
+        if (!musingsData.length) {
+          document.getElementById('musings-content').innerHTML =
+            '<div class="empty-state">No musings yet.</div>';
+          return;
+        }
+
+        // Build nav pills
+        const navEl = document.getElementById('musings-nav');
+        navEl.innerHTML = musingsData.map((m, i) => `
+          <button class="musing-pill" onclick="showMusing(${i})" style="
+            background: none;
+            border: 1px solid transparent;
+            border-radius: 4px;
+            padding: 3px 10px;
+            font-family: var(--font);
+            font-size: 10px;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            color: var(--text-dim);
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+          ">${m.title}</button>
+        `).join('');
+
+        showMusing(0);
+      } catch(e) {
+        document.getElementById('musings-content').innerHTML =
+          `<div class="empty-state">⚠ ${e.message}</div>`;
+      }
+    }
 
   </script>
 </body>
